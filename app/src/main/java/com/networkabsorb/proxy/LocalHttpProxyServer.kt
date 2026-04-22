@@ -11,7 +11,6 @@ import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStream
-import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
@@ -266,14 +265,9 @@ class LocalHttpProxyServer(
             // Build dynamic cert + SSLContext for the client side
             val dynamicSslContext = certificateManager.buildSslContextForHost(hostname)
 
-            val clientSslSocket = dynamicSslContext.serverSocketFactory
-                .createServerSocket(0)
-                .use { ss ->
-                    // We wrap the existing client socket, not open a new one
-                    dynamicSslContext.socketFactory.createSocket(
-                        client, client.inetAddress.hostAddress, client.port, true
-                    ) as SSLSocket
-                }
+            val clientSslSocket = dynamicSslContext.socketFactory.createSocket(
+                client, client.inetAddress.hostAddress, client.port, true
+            ) as SSLSocket
 
             clientSslSocket.useClientMode = false
             clientSslSocket.startHandshake()

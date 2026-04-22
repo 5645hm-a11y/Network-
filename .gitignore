@@ -1,0 +1,23 @@
+# Local SDK path (נוצר אוטומטית ע"י Android Studio / CI)
+local.properties
+
+# Build outputs
+**/build/
+*.apk
+*.aab
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# IDE
+.idea/
+*.iml
+*.iws
+.DS_Store
+
+# Keystore (לעולם לא ל-git!)
+*.jks
+*.keystore

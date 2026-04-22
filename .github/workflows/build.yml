@@ -5,7 +5,6 @@ on:
     branches: [ "**" ]
   pull_request:
     branches: [ "**" ]
-  # מאפשר הרצה ידנית דרך GitHub UI
   workflow_dispatch:
 
 jobs:
@@ -14,11 +13,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. שכפול הקוד
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. הגדרת Java 17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -26,32 +23,45 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      # 3. הגדרת Android SDK
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # 4. הרשאות הרצה ל-gradlew
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      # 5. Cache של Gradle dependencies (מאיץ builds עתידיים)
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # 6. בניית APK בגרסת debug
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false"
+      # ubuntu-latest כבר מגיע עם Android SDK – רק מגדירים את הנתיב
+      - name: Set up Android SDK path
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "Android SDK at: $ANDROID_HOME"
+          ls $ANDROID_HOME/platforms/ || true
+          ls $ANDROID_HOME/build-tools/ || true
 
-      # 7. העלאת ה-APK כ-Artifact להורדה
+      # מוריד platform-35 ו-build-tools 35 אם חסרים
+      - name: Install missing SDK components
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools" 2>/dev/null || \
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "platform-tools" 2>/dev/null || true
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -100
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -59,9 +69,8 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      # 8. הצגת מידע על ה-APK שנבנה
-      - name: APK Info
+      - name: Show APK info
+        if: success()
         run: |
           echo "✅ APK built successfully!"
           ls -lh app/build/outputs/apk/debug/
-          echo "Download the APK from the Actions tab → Artifacts section"
