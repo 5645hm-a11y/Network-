@@ -54,16 +54,6 @@
                 android:value="VPN network interception for offline caching" />
         </service>
 
-        <!-- WorkManager for background prefetch -->
-        <provider
-            android:name="androidx.startup.InitializationProvider"
-            android:authorities="${applicationId}.androidx-startup"
-            android:exported="false">
-            <meta-data
-                android:name="androidx.work.impl.WorkManagerInitializer"
-                android:value="androidx.startup" />
-        </provider>
-
     </application>
 
 </manifest>

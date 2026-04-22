@@ -22,8 +22,6 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
         }
         release {
             isMinifyEnabled = true
@@ -72,9 +70,6 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
-
-    implementation(libs.androidx.datastore)
-    implementation(libs.androidx.work.runtime)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
