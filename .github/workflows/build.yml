@@ -33,36 +33,28 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # ubuntu-latest כבר מגיע עם Android SDK – רק מגדירים את הנתיב
-      - name: Set up Android SDK path
+      - name: Set up Android SDK
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          echo "Android SDK at: $ANDROID_HOME"
-          ls $ANDROID_HOME/platforms/ || true
-          ls $ANDROID_HOME/build-tools/ || true
-
-      # מוריד platform-35 ו-build-tools 35 אם חסרים
-      - name: Install missing SDK components
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "platform-tools" 2>/dev/null || \
+          echo "ANDROID_HOME = $ANDROID_HOME"
+          # Install platform-34 and build-tools-34 if not already present
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platforms;android-34" \
             "build-tools;34.0.0" \
-            "platform-tools" 2>/dev/null || true
+            --channel=0 2>&1 | grep -v "^\[=" || true
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -100
+        run: |
+          set -e
+          ./gradlew assembleDebug --no-daemon --stacktrace
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Upload Debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: NetworkAbsorb-debug-${{ github.run_number }}
@@ -72,5 +64,5 @@ jobs:
       - name: Show APK info
         if: success()
         run: |
-          echo "✅ APK built successfully!"
+          echo "APK built successfully!"
           ls -lh app/build/outputs/apk/debug/
