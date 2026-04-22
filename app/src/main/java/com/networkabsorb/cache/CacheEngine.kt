@@ -114,7 +114,7 @@ class CacheEngine @Inject constructor(
     }
 
     suspend fun purgeExpired() {
-        val purged = dao.purgeExpired(System.currentTimeMillis())
+        dao.purgeExpired(System.currentTimeMillis())
         Log.i(TAG, "Purged expired entries")
     }
 

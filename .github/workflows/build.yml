@@ -49,9 +49,14 @@ jobs:
       - name: Build Debug APK
         run: |
           set -e
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+
+      - name: Show build logs on failure
+        if: failure()
+        run: |
+          find . -name "*.log" -path "*/build/*" | xargs grep -l "error:" 2>/dev/null | head -3 | xargs cat 2>/dev/null | tail -100 || true
 
       - name: Upload Debug APK
         if: success()
