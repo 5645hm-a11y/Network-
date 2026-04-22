@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.networkabsorb.R
+import com.networkabsorb.ai.ProactiveAbsorber
 import com.networkabsorb.cache.CacheEngine
 import com.networkabsorb.logger.TrafficLogger
 import com.networkabsorb.proxy.LocalHttpProxyServer
@@ -48,6 +49,7 @@ class InternetExtractorVpnService : VpnService() {
 
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID      = "network_absorb_channel"
+        const val EXTRA_QUOTA_MB  = "quota_mb"
 
         const val PROXY_PORT  = 8118
         const val VPN_ADDRESS = "10.0.0.2"
@@ -57,6 +59,7 @@ class InternetExtractorVpnService : VpnService() {
     @Inject lateinit var cacheEngine: CacheEngine
     @Inject lateinit var certificateManager: CertificateManager
     @Inject lateinit var trafficLogger: TrafficLogger
+    @Inject lateinit var proactiveAbsorber: ProactiveAbsorber
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -66,6 +69,7 @@ class InternetExtractorVpnService : VpnService() {
 
     enum class Mode { ABSORB, SERVE }
     private var currentMode = Mode.ABSORB
+    private var quotaMb     = 500
 
     // -------------------------------------------------------------------------
     // Lifecycle
@@ -78,7 +82,10 @@ class InternetExtractorVpnService : VpnService() {
                 return START_NOT_STICKY
             }
             ACTION_START_SERVE -> currentMode = Mode.SERVE
-            else               -> currentMode = Mode.ABSORB
+            else               -> {
+                currentMode = Mode.ABSORB
+                quotaMb = intent?.getIntExtra(EXTRA_QUOTA_MB, 500) ?: 500
+            }
         }
 
         startForeground(NOTIFICATION_ID, buildNotification())
@@ -127,6 +134,11 @@ class InternetExtractorVpnService : VpnService() {
             tunForwarder = TunForwarder(vpnInterface!!.fileDescriptor, this@InternetExtractorVpnService)
             serviceScope.launch(Dispatchers.IO) { tunForwarder?.run() }
 
+            // In ABSORB mode: proactively download predicted content via the proxy
+            if (currentMode == Mode.ABSORB) {
+                proactiveAbsorber.start(serviceScope, quotaMb)
+            }
+
         } catch (e: Exception) {
             Log.e(TAG, "Error starting VPN", e)
             stopSelf()
@@ -135,6 +147,7 @@ class InternetExtractorVpnService : VpnService() {
 
     private fun stopVpn() {
         Log.i(TAG, "Stopping VPN")
+        proactiveAbsorber.stop()
         tunForwarder?.stop()
         proxyServer?.stop()
         vpnInterface?.close()

@@ -14,6 +14,7 @@ import com.networkabsorb.logger.TrafficEvent
 import com.networkabsorb.logger.TrafficLogger
 import com.networkabsorb.security.CertificateManager
 import com.networkabsorb.vpn.InternetExtractorVpnService
+import com.networkabsorb.vpn.InternetExtractorVpnService.Companion.EXTRA_QUOTA_MB
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -86,6 +87,7 @@ class MainViewModel @Inject constructor(
         app.startForegroundService(
             Intent(app, InternetExtractorVpnService::class.java).apply {
                 action = InternetExtractorVpnService.ACTION_START_ABSORB
+                putExtra(EXTRA_QUOTA_MB, _uiState.value.quotaMb)
             }
         )
         _uiState.update { it.copy(
