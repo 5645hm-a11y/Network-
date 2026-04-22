@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Network Absorb</string>
+    <string name="vpn_session_name">NetworkAbsorb VPN</string>
+    <string name="notification_channel_id">network_absorb_channel</string>
+    <string name="notification_channel_name">Network Absorb Service</string>
+    <string name="notification_absorbing">Absorbing internet traffic…</string>
+    <string name="notification_serving">Serving cached content (offline)</string>
+    <string name="ca_install_guide">Install the app CA certificate to enable HTTPS interception.\nGo to Settings → Security → Install certificate</string>
+</resources>
