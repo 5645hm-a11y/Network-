@@ -83,6 +83,9 @@ class CertificateManager @Inject constructor(
     // Public API
     // -------------------------------------------------------------------------
 
+    /** True if the CA keystore file already exists on disk. */
+    fun caExists(): Boolean = File(context.filesDir, CA_KEYSTORE_FILE).exists()
+
     /**
      * Returns the CA certificate as a PEM string, ready for the user to install.
      */

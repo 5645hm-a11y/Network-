@@ -1,7 +1,7 @@
 package com.networkabsorb.ui.screens
 
-import android.content.Intent
-import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.networkabsorb.ui.MainViewModel
@@ -23,7 +22,10 @@ import com.networkabsorb.ui.MainViewModel
 @Composable
 fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
+
+    val certLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { viewModel.onCaCertInstalled() }
 
     Scaffold(
         topBar = {
@@ -50,32 +52,16 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
 
             SettingsCard(
                 title    = "Install CA Certificate",
-                subtitle = "Required for HTTPS interception. Tap to export, then install via Settings → Security.",
+                subtitle = if (uiState.caCertReady) "Certificate ready ✓" else "Required for HTTPS interception",
                 icon     = Icons.Default.Security
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { viewModel.exportCaCert() }) {
-                        Icon(Icons.Default.Download, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Export CA")
-                    }
-                    Button(onClick = {
-                        // Navigate user to certificate installer
-                        val intent = Intent(Settings.ACTION_SECURITY_SETTINGS)
-                        context.startActivity(intent)
-                    }) {
-                        Icon(Icons.Default.OpenInNew, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Open Security")
-                    }
-                }
-                uiState.exportedCaFile?.let { file ->
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Exported to: ${file.absolutePath}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                Button(onClick = {
+                    try { certLauncher.launch(viewModel.buildCaInstallIntent()) }
+                    catch (_: Exception) { viewModel.onCaCertInstalled() }
+                }) {
+                    Icon(Icons.Default.Download, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Install CA Certificate")
                 }
             }
 
@@ -101,28 +87,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(8.dp))
-            SectionHeader("AI Insights")
-
-            SettingsCard(
-                title    = "Prediction Engine",
-                subtitle = "View learned URL patterns and prefetch predictions.",
-                icon     = Icons.Default.Psychology
-            ) {
-                Button(onClick = { viewModel.refreshAiInsights() }) {
-                    Text("Refresh Insights")
-                }
-                if (uiState.aiInsights.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    uiState.aiInsights.forEach { (k, v) ->
-                        Text(
-                            "$k: $v",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-
             Spacer(Modifier.height(8.dp))
             SectionHeader("About")
 
