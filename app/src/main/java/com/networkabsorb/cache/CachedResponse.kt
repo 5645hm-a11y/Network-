@@ -3,28 +3,19 @@ package com.networkabsorb.cache
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
-import androidx.room.TypeConverters
-import com.networkabsorb.cache.CachedResponse.Converters
 
-/**
- * A fully captured HTTP response, stored in Room.
- *
- * [body] is stored as a BLOB – large responses will be stored compressed.
- * [ttlMs] is the cache validity window; 0 = forever (user-forced cache).
- */
 @Entity(tableName = "cached_responses")
-@TypeConverters(Converters::class)
 data class CachedResponse(
-    @PrimaryKey val key: String = "",          // "$method:$url"
+    @PrimaryKey val key: String = "",
     val url: String,
     val method: String,
     val statusCode: Int,
     val contentType: String,
-    val headers: Map<String, String>,
+    val headers: String,         // stored as "key::value\n..." — converted by CacheConverters
     val body: ByteArray,
     val timestampMs: Long,
-    val ttlMs: Long,                           // 0 = no expiry
-    val accessCount: Int = 0,                  // for AI priority scoring
+    val ttlMs: Long,
+    val accessCount: Int = 0,
     val sizeBytes: Int = body.size,
     val compressed: Boolean = false
 ) {
@@ -33,7 +24,6 @@ data class CachedResponse(
         return System.currentTimeMillis() > timestampMs + ttlMs
     }
 
-    /** Priority score for cache eviction – higher = keep longer */
     fun priorityScore(): Float {
         val freshnessRatio = if (ttlMs > 0)
             1f - ((System.currentTimeMillis() - timestampMs).toFloat() / ttlMs)
@@ -42,22 +32,6 @@ data class CachedResponse(
         return (freshnessRatio * 0.4f) + (frequencyScore * 0.6f)
     }
 
-    class Converters {
-        @TypeConverter
-        fun fromHeaderMap(map: Map<String, String>): String =
-            map.entries.joinToString("\n") { "${it.key}::${it.value}" }
-
-        @TypeConverter
-        fun toHeaderMap(raw: String): Map<String, String> =
-            if (raw.isEmpty()) emptyMap()
-            else raw.split("\n").associate {
-                val idx = it.indexOf("::")
-                if (idx < 0) it to ""
-                else it.substring(0, idx) to it.substring(idx + 2)
-            }
-    }
-
-    // ByteArray requires manual equals/hashCode
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is CachedResponse) return false
@@ -65,4 +39,20 @@ data class CachedResponse(
     }
 
     override fun hashCode(): Int = key.hashCode()
+}
+
+/** Separate converter class — registered only on CacheDatabase, not on the entity */
+class CacheConverters {
+    @TypeConverter
+    fun fromHeaderMap(map: Map<String, String>): String =
+        map.entries.joinToString("\n") { "${it.key}::${it.value}" }
+
+    @TypeConverter
+    fun toHeaderMap(raw: String): Map<String, String> =
+        if (raw.isEmpty()) emptyMap()
+        else raw.split("\n").associate {
+            val idx = it.indexOf("::")
+            if (idx < 0) it to ""
+            else it.substring(0, idx) to it.substring(idx + 2)
+        }
 }

@@ -196,9 +196,9 @@ class LocalHttpProxyServer(
                 key = cacheKey,
                 response = CachedResponse(
                     statusCode    = statusCode,
-                    headers       = responseHeaders.mapValues { it.value.joinToString(", ") }
-                                                   .filterKeys { it != null }
-                                                   .mapKeys    { it.key!! },
+                    headers       = responseHeaders.entries
+                                        .filter { it.key != null }
+                                        .joinToString("\n") { "${it.key}::${it.value.joinToString(", ")}" },
                     body          = body,
                     url           = url,
                     method        = method,
@@ -354,11 +354,12 @@ class LocalHttpProxyServer(
             clientOut.write(body)
             clientOut.flush()
 
+            val headersStr = respHeaders.entries.joinToString("\n") { "${it.key}::${it.value}" }
             cacheEngine.put(
                 key = cacheKey,
                 response = CachedResponse(
                     statusCode  = statusCode,
-                    headers     = respHeaders,
+                    headers     = headersStr,
                     body        = body,
                     url         = url,
                     method      = method,
@@ -409,7 +410,12 @@ class LocalHttpProxyServer(
 
     private fun writeCachedResponse(out: OutputStream, cached: CachedResponse) {
         val sb = StringBuilder("HTTP/1.1 ${cached.statusCode} OK\r\n")
-        cached.headers.forEach { (k, v) -> sb.append("$k: $v\r\n") }
+        if (cached.headers.isNotEmpty()) {
+            cached.headers.split("\n").forEach { line ->
+                val idx = line.indexOf("::")
+                if (idx > 0) sb.append("${line.substring(0, idx)}: ${line.substring(idx + 2)}\r\n")
+            }
+        }
         sb.append("X-Cache: HIT\r\n")
         sb.append("Content-Length: ${cached.body.size}\r\n")
         sb.append("\r\n")

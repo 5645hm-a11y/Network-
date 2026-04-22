@@ -9,7 +9,7 @@ import androidx.room.TypeConverters
     version = 1,
     exportSchema = false
 )
-@TypeConverters(CachedResponse.Converters::class)
+@TypeConverters(CacheConverters::class)
 abstract class CacheDatabase : RoomDatabase() {
     abstract fun cacheDao(): CacheDao
 }
