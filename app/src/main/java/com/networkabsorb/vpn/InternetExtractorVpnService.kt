@@ -62,7 +62,7 @@ class InternetExtractorVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private var proxyServer: LocalHttpProxyServer?  = null
-    private var tunDrainer:  TunDrainer?            = null
+    private var tunForwarder: TunForwarder?         = null
 
     enum class Mode { ABSORB, SERVE }
     private var currentMode = Mode.ABSORB
@@ -122,9 +122,10 @@ class InternetExtractorVpnService : VpnService() {
             )
             serviceScope.launch { proxyServer?.start() }
 
-            // Drain TUN fd so the kernel buffer never fills up
-            tunDrainer = TunDrainer(vpnInterface!!.fileDescriptor)
-            serviceScope.launch(Dispatchers.IO) { tunDrainer?.run() }
+            // Forward DNS packets so name resolution keeps working.
+            // HTTP/HTTPS is handled via setHttpProxy() — never reaches TUN.
+            tunForwarder = TunForwarder(vpnInterface!!.fileDescriptor, this@InternetExtractorVpnService)
+            serviceScope.launch(Dispatchers.IO) { tunForwarder?.run() }
 
         } catch (e: Exception) {
             Log.e(TAG, "Error starting VPN", e)
@@ -134,12 +135,12 @@ class InternetExtractorVpnService : VpnService() {
 
     private fun stopVpn() {
         Log.i(TAG, "Stopping VPN")
-        tunDrainer?.stop()
+        tunForwarder?.stop()
         proxyServer?.stop()
         vpnInterface?.close()
-        vpnInterface = null
-        tunDrainer   = null
-        proxyServer  = null
+        vpnInterface  = null
+        tunForwarder  = null
+        proxyServer   = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
