@@ -60,6 +60,7 @@ class InternetExtractorVpnService : VpnService() {
     @Inject lateinit var certificateManager: CertificateManager
     @Inject lateinit var trafficLogger: TrafficLogger
     @Inject lateinit var proactiveAbsorber: ProactiveAbsorber
+    @Inject lateinit var dnsCache: DnsCache
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -131,7 +132,12 @@ class InternetExtractorVpnService : VpnService() {
 
             // Forward DNS packets so name resolution keeps working.
             // HTTP/HTTPS is handled via setHttpProxy() — never reaches TUN.
-            tunForwarder = TunForwarder(vpnInterface!!.fileDescriptor, this@InternetExtractorVpnService)
+            tunForwarder = TunForwarder(
+                vpnFd      = vpnInterface!!.fileDescriptor,
+                vpnService = this@InternetExtractorVpnService,
+                mode       = currentMode,
+                dnsCache   = dnsCache
+            )
             serviceScope.launch(Dispatchers.IO) { tunForwarder?.run() }
 
             // In ABSORB mode: proactively download predicted content via the proxy

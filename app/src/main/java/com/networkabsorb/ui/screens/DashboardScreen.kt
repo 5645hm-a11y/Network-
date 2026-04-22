@@ -7,6 +7,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -18,18 +19,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.networkabsorb.ui.MainViewModel
+import com.networkabsorb.ui.UiState
 import com.networkabsorb.vpn.InternetExtractorVpnService
 
+// ── Design tokens ───────────────────────────────────────────────────────────
 private val GreenAbsorb = Color(0xFF00E676)
-private val BlueServe   = Color(0xFF2979FF)
+private val CyanSim     = Color(0xFF00BCD4)
 private val OrangeWarn  = Color(0xFFFF9800)
-private val CardBg      = Color(0xFF1A2030)
-private val PageBg      = Color(0xFF0D1117)
+private val RedStop     = Color(0xFFEF5350)
+private val CardBg      = Color(0xFF131B2E)
+private val PageBg      = Color(0xFF0A0F1E)
+private val SurfaceBg   = Color(0xFF1C2540)
 
 @Composable
 fun DashboardScreen(
@@ -37,7 +42,6 @@ fun DashboardScreen(
     onNavigateTo: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
 
     val vpnLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -47,10 +51,7 @@ fun DashboardScreen(
 
     val certLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) {
-        // After returning from cert install screen, mark as installed
-        viewModel.onCaCertInstalled()
-    }
+    ) { viewModel.onCaCertInstalled() }
 
     Column(
         modifier = Modifier
@@ -60,86 +61,68 @@ fun DashboardScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+
         // ── Header ──────────────────────────────────────────────────────────
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment     = Alignment.CenterVertically
         ) {
             Column {
                 Text(
-                    "Network Absorb",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    "Virtual SIM",
+                    style      = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color      = Color.White
                 )
                 Text(
-                    "שאיבת אינטרנט חכמה",
+                    "שאיבת אינטרנט · גלישה ללא רשת",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = Color.White.copy(alpha = 0.45f)
                 )
             }
             Row {
                 IconButton(onClick = { onNavigateTo("traffic") }) {
-                    Icon(Icons.Default.Timeline, "Traffic", tint = Color.White.copy(alpha = 0.7f))
+                    Icon(Icons.Default.Timeline, null, tint = Color.White.copy(0.6f))
                 }
                 IconButton(onClick = { onNavigateTo("settings") }) {
-                    Icon(Icons.Default.Settings, "Settings", tint = Color.White.copy(alpha = 0.7f))
+                    Icon(Icons.Default.Settings, null, tint = Color.White.copy(0.6f))
                 }
             }
         }
 
-        // ── CA Cert warning (if not installed) ──────────────────────────────
+        // ── CA cert warning ──────────────────────────────────────────────────
         if (!uiState.caCertReady && !uiState.vpnRunning) {
-            CaCertBanner(onInstall = {
-                try {
-                    val intent = viewModel.buildCaInstallIntent()
-                    certLauncher.launch(intent)
-                } catch (e: Exception) {
-                    viewModel.onCaCertInstalled() // fallback: assume done
-                }
-            })
+            CaCertBanner {
+                try { certLauncher.launch(viewModel.buildCaInstallIntent()) }
+                catch (_: Exception) { viewModel.onCaCertInstalled() }
+            }
         }
 
-        // ── Main action card ─────────────────────────────────────────────────
+        // ── Main card — switches based on VPN state ──────────────────────────
         when {
             !uiState.vpnRunning -> ReadyCard(
-                uiState   = uiState,
-                onAbsorb  = {
+                uiState  = uiState,
+                onAbsorb = {
                     val prep = viewModel.prepareVpn()
                     if (prep != null) vpnLauncher.launch(prep)
                     else viewModel.startAbsorbing()
                 },
-                onServe   = { viewModel.startServing() },
-                onQuota   = { viewModel.setQuota(it) }
+                onServe  = { viewModel.startServing() },
+                onQuota  = { viewModel.setQuota(it) }
             )
             uiState.mode == InternetExtractorVpnService.Mode.ABSORB -> AbsorbingCard(
                 uiState = uiState,
                 onStop  = { viewModel.stopVpn() }
             )
-            else -> ServingCard(
+            else -> VirtualSimActiveCard(
                 uiState = uiState,
                 onStop  = { viewModel.stopVpn() }
             )
         }
 
-        // ── Total cache stats ────────────────────────────────────────────────
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MiniStatCard(
-                modifier = Modifier.weight(1f),
-                label    = "סך הכל שמור",
-                value    = "${uiState.cacheEntryCount}",
-                unit     = "בקשות",
-                color    = GreenAbsorb
-            )
-            MiniStatCard(
-                modifier = Modifier.weight(1f),
-                label    = "גודל מטמון",
-                value    = "%.1f".format(uiState.cacheSizeMb),
-                unit     = "MB",
-                color    = BlueServe
-            )
-        }
+        // ── Storage summary ──────────────────────────────────────────────────
+        StorageSummaryRow(uiState)
     }
 }
 
@@ -151,37 +134,27 @@ fun DashboardScreen(
 private fun CaCertBanner(onInstall: () -> Unit) {
     Card(
         shape  = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = OrangeWarn.copy(alpha = 0.15f))
+        colors = CardDefaults.cardColors(containerColor = OrangeWarn.copy(0.12f))
     ) {
         Row(
             Modifier.padding(14.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment     = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Default.Lock,
-                contentDescription = null,
-                tint   = OrangeWarn,
-                modifier = Modifier.size(28.dp)
-            )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(Icons.Default.Lock, null, tint = OrangeWarn, modifier = Modifier.size(26.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("נדרש אישור אבטחה", fontWeight = FontWeight.Bold, color = OrangeWarn, fontSize = 13.sp)
                 Text(
-                    "נדרש אישור אבטחה",
-                    fontWeight = FontWeight.Bold,
-                    color  = OrangeWarn,
-                    fontSize = 14.sp
-                )
-                Text(
-                    "כדי לשאוב HTTPS (רוב האינטרנט), התקן את אישור ה-CA של האפליקציה",
-                    color  = Color.White.copy(alpha = 0.75f),
-                    style  = MaterialTheme.typography.bodySmall,
-                    lineHeight = 18.sp
+                    "כדי לשאוב HTTPS – התקן את אישור ה-CA",
+                    color = Color.White.copy(0.65f),
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 17.sp
                 )
             }
             Button(
                 onClick = onInstall,
                 colors  = ButtonDefaults.buttonColors(containerColor = OrangeWarn),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Text("התקן", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
             }
@@ -190,15 +163,15 @@ private fun CaCertBanner(onInstall: () -> Unit) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ready (idle) card
+// Idle / ready card
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ReadyCard(
-    uiState: com.networkabsorb.ui.UiState,
+    uiState : UiState,
     onAbsorb: () -> Unit,
-    onServe: () -> Unit,
-    onQuota: (Int) -> Unit
+    onServe : () -> Unit,
+    onQuota : (Int) -> Unit
 ) {
     Card(
         shape  = RoundedCornerShape(20.dp),
@@ -206,85 +179,93 @@ private fun ReadyCard(
     ) {
         Column(
             Modifier.padding(20.dp).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Icon + title
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+
+            // Title
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 Box(
                     Modifier.size(52.dp).clip(RoundedCornerShape(14.dp))
-                        .background(GreenAbsorb.copy(alpha = 0.15f)),
+                        .background(
+                            Brush.radialGradient(listOf(GreenAbsorb.copy(0.3f), Color.Transparent))
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Default.WifiTethering, null, tint = GreenAbsorb, modifier = Modifier.size(28.dp))
                 }
                 Column {
                     Text("מוכן לשאיבה", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp)
-                    Text("בחר כמות ולחץ התחל", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "WiFi → מטמון → Virtual SIM",
+                        color = Color.White.copy(0.4f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
 
-            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+            HorizontalDivider(color = Color.White.copy(0.07f))
 
-            // Quota selector
+            // Quota slider
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("כמות לשאיבה", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                    Text("כמות לשאיבה", color = Color.White.copy(0.75f), fontSize = 14.sp)
                     Text(
                         if (uiState.quotaMb >= 1024) "${"%.1f".format(uiState.quotaMb / 1024f)} GB"
                         else "${uiState.quotaMb} MB",
-                        color = GreenAbsorb,
+                        color      = GreenAbsorb,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        fontSize   = 14.sp
                     )
                 }
                 Slider(
-                    value = uiState.quotaMb.toFloat(),
+                    value         = uiState.quotaMb.toFloat(),
                     onValueChange = { onQuota(it.toInt()) },
-                    valueRange = 100f..5120f,
-                    steps = 49,
-                    colors = SliderDefaults.colors(
-                        thumbColor        = GreenAbsorb,
-                        activeTrackColor  = GreenAbsorb,
-                        inactiveTrackColor = GreenAbsorb.copy(alpha = 0.2f)
+                    valueRange    = 100f..5120f,
+                    steps         = 49,
+                    colors        = SliderDefaults.colors(
+                        thumbColor         = GreenAbsorb,
+                        activeTrackColor   = GreenAbsorb,
+                        inactiveTrackColor = GreenAbsorb.copy(0.2f)
                     )
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("100 MB", color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp)
-                    Text("5 GB",   color = Color.White.copy(alpha = 0.3f), fontSize = 11.sp)
+                    Text("100 MB", color = Color.White.copy(0.28f), fontSize = 11.sp)
+                    Text("5 GB",   color = Color.White.copy(0.28f), fontSize = 11.sp)
                 }
             }
 
-            // Action buttons
+            // Step hint
+            StepHint()
+
+            // Buttons
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
-                    onClick = onAbsorb,
+                    onClick  = onAbsorb,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape  = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = GreenAbsorb)
+                    shape    = RoundedCornerShape(14.dp),
+                    colors   = ButtonDefaults.buttonColors(containerColor = GreenAbsorb)
                 ) {
-                    Icon(Icons.Default.CloudDownload, null, modifier = Modifier.size(20.dp), tint = Color.Black)
+                    Icon(Icons.Default.CloudDownload, null, Modifier.size(20.dp), tint = Color.Black)
                     Spacer(Modifier.width(8.dp))
-                    Text(
-                        "התחל שאיבה מהרשת",
-                        fontWeight = FontWeight.Bold,
-                        fontSize   = 16.sp,
-                        color      = Color.Black
-                    )
+                    Text("שאב אינטרנט מה-WiFi", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color.Black)
                 }
 
                 if (uiState.cacheSizeMb > 0f) {
                     OutlinedButton(
-                        onClick = onServe,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        shape  = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BlueServe),
-                        border = androidx.compose.foundation.BorderStroke(1.5.dp, BlueServe.copy(alpha = 0.5f))
+                        onClick  = onServe,
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape    = RoundedCornerShape(14.dp),
+                        colors   = ButtonDefaults.outlinedButtonColors(contentColor = CyanSim),
+                        border   = androidx.compose.foundation.BorderStroke(1.5.dp, CyanSim.copy(0.5f))
                     ) {
-                        Icon(Icons.Default.WifiOff, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.SimCard, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "הפעל אינטרנט ממטמון (${"%.0f".format(uiState.cacheSizeMb)} MB שמור)",
-                            fontWeight = FontWeight.Medium,
+                            "הפעל Virtual SIM (${"%.0f".format(uiState.cacheSizeMb)} MB)",
+                            fontWeight = FontWeight.Bold,
                             fontSize   = 14.sp
                         )
                     }
@@ -294,19 +275,52 @@ private fun ReadyCard(
     }
 }
 
+@Composable
+private fun StepHint() {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+            .background(SurfaceBg).padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        StepChip("1", "WiFi", GreenAbsorb)
+        Icon(Icons.Default.ArrowForward, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
+        StepChip("2", "שאב", GreenAbsorb)
+        Icon(Icons.Default.ArrowForward, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
+        StepChip("3", "חו\"ל", CyanSim)
+        Icon(Icons.Default.ArrowForward, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
+        StepChip("4", "גלוש", CyanSim)
+    }
+}
+
+@Composable
+private fun RowScope.StepChip(num: String, label: String, color: Color) {
+    Column(
+        Modifier.weight(1f),
+        horizontalAlignment   = Alignment.CenterHorizontally,
+        verticalArrangement   = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(
+            Modifier.size(24.dp).clip(CircleShape).background(color.copy(0.2f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(num, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(label, color = Color.White.copy(0.6f), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Clip)
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Absorbing card (live progress)
+// Absorbing card
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun AbsorbingCard(uiState: com.networkabsorb.ui.UiState, onStop: () -> Unit) {
+private fun AbsorbingCard(uiState: UiState, onStop: () -> Unit) {
     val progress = (uiState.absorptionProgressMb / uiState.quotaMb.toFloat()).coerceIn(0f, 1f)
 
-    // Pulsing animation for the "live" dot
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
+    val dotAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
         label = "dot"
     )
 
@@ -316,19 +330,24 @@ private fun AbsorbingCard(uiState: com.networkabsorb.ui.UiState, onStop: () -> U
     ) {
         Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
-            // Status row
+            // Header row
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment     = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(GreenAbsorb.copy(alpha = alpha)))
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(GreenAbsorb.copy(dotAlpha)))
                     Text("שואב מהרשת...", fontWeight = FontWeight.Bold, color = GreenAbsorb, fontSize = 16.sp)
                 }
-                TextButton(onClick = onStop, colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF5350))) {
-                    Icon(Icons.Default.Stop, null, modifier = Modifier.size(16.dp))
+                TextButton(
+                    onClick = onStop,
+                    colors  = ButtonDefaults.textButtonColors(contentColor = RedStop)
+                ) {
+                    Icon(Icons.Default.Stop, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("עצור", fontWeight = FontWeight.Bold)
                 }
@@ -337,56 +356,54 @@ private fun AbsorbingCard(uiState: com.networkabsorb.ui.UiState, onStop: () -> U
             // Progress bar
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
-                    color    = GreenAbsorb,
-                    trackColor = GreenAbsorb.copy(alpha = 0.15f)
+                    progress   = { progress },
+                    modifier   = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
+                    color      = GreenAbsorb,
+                    trackColor = GreenAbsorb.copy(0.15f)
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    val progressLabel =
-                        if (uiState.absorptionProgressMb >= 1024f)
-                            "${"%.2f".format(uiState.absorptionProgressMb / 1024f)} GB"
-                        else "${"%.1f".format(uiState.absorptionProgressMb)} MB"
-                    val quotaLabel =
-                        if (uiState.quotaMb >= 1024)
-                            "${"%.1f".format(uiState.quotaMb / 1024f)} GB"
-                        else "${uiState.quotaMb} MB"
-                    Text(progressLabel, color = GreenAbsorb, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("מתוך $quotaLabel", color = Color.White.copy(alpha = 0.4f), fontSize = 13.sp)
+                    Text(
+                        formatMb(uiState.absorptionProgressMb),
+                        color = GreenAbsorb, fontWeight = FontWeight.Bold, fontSize = 13.sp
+                    )
+                    Text(
+                        "מתוך ${formatMb(uiState.quotaMb.toFloat())}",
+                        color = Color.White.copy(0.35f), fontSize = 13.sp
+                    )
                 }
             }
 
-            // Live counters
+            // Counters
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LiveStat(Modifier.weight(1f), label = "בקשות", value = "${uiState.sessionRequests}", color = GreenAbsorb)
-                LiveStat(
-                    modifier = Modifier.weight(1f),
-                    label    = "נשאב",
-                    value    = if (uiState.sessionBytesKb >= 1024f)
-                                   "${"%.1f".format(uiState.sessionBytesKb / 1024f)} MB"
-                               else "${"%.0f".format(uiState.sessionBytesKb)} KB",
-                    color    = GreenAbsorb
-                )
+                StatBox(Modifier.weight(1f), "בקשות", "${uiState.sessionRequests}", GreenAbsorb)
+                StatBox(Modifier.weight(1f), "נשאב", formatKb(uiState.sessionBytesKb), GreenAbsorb)
             }
 
-            // Top domains
+            // Domain list
             if (uiState.topDomains.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("אתרים שנשמרים:", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("אתרים שנשמרים:", color = Color.White.copy(0.4f), fontSize = 11.sp)
                     uiState.topDomains.take(5).forEach { (domain, count) ->
                         Row(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment     = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Box(Modifier.size(6.dp).clip(androidx.compose.foundation.shape.CircleShape)
-                                    .background(GreenAbsorb.copy(alpha = 0.6f)))
-                                Text(domain, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp,
-                                     maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                     modifier = Modifier.widthIn(max = 200.dp))
+                            Row(
+                                verticalAlignment     = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(Modifier.size(6.dp).clip(CircleShape).background(GreenAbsorb.copy(0.55f)))
+                                Text(
+                                    domain,
+                                    color    = Color.White.copy(0.8f),
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 200.dp)
+                                )
                             }
-                            Text("$count", color = GreenAbsorb.copy(alpha = 0.8f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("$count", color = GreenAbsorb.copy(0.8f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -396,83 +413,170 @@ private fun AbsorbingCard(uiState: com.networkabsorb.ui.UiState, onStop: () -> U
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Serving card (offline mode)
+// Virtual SIM active card
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ServingCard(uiState: com.networkabsorb.ui.UiState, onStop: () -> Unit) {
+private fun VirtualSimActiveCard(uiState: UiState, onStop: () -> Unit) {
+    val infiniteTransition = rememberInfiniteTransition(label = "sim")
+    val glow by infiniteTransition.animateFloat(
+        initialValue = 0.4f, targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "glow"
+    )
+
     Card(
         shape  = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = CardBg)
     ) {
         Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
-            // Status
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.WifiOff, null, tint = BlueServe, modifier = Modifier.size(22.dp))
-                    Text("אינטרנט ממטמון פעיל", fontWeight = FontWeight.Bold, color = BlueServe, fontSize = 16.sp)
+            // Header
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
+                            .background(CyanSim.copy(glow * 0.25f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.SimCard, null, tint = CyanSim, modifier = Modifier.size(22.dp))
+                    }
+                    Column {
+                        Text("Virtual SIM פעיל", fontWeight = FontWeight.Bold, color = CyanSim, fontSize = 16.sp)
+                        Text("גולש ללא רשת מהמטמון", color = Color.White.copy(0.4f), style = MaterialTheme.typography.bodySmall)
+                    }
                 }
-                TextButton(onClick = onStop, colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFEF5350))) {
-                    Icon(Icons.Default.Stop, null, modifier = Modifier.size(16.dp))
+                TextButton(
+                    onClick = onStop,
+                    colors  = ButtonDefaults.textButtonColors(contentColor = RedStop)
+                ) {
+                    Icon(Icons.Default.Stop, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("עצור", fontWeight = FontWeight.Bold)
                 }
             }
 
             // Info box
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(BlueServe.copy(alpha = 0.1f)).padding(14.dp)) {
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(CyanSim.copy(0.08f)).padding(14.dp)
+            ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "הטלפון מקבל אינטרנט מהמטמון השמור",
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        "כל בקשה לאתר שנשאב תוגש מיידית. אתרים חדשים לא ייטענו.",
-                        color = Color.White.copy(alpha = 0.5f),
-                        style = MaterialTheme.typography.bodySmall,
-                        lineHeight = 18.sp
-                    )
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, null, tint = CyanSim, modifier = Modifier.size(16.dp))
+                        Text(
+                            "הטלפון עובד ללא WiFi / סלולרי",
+                            color = Color.White.copy(0.9f), fontWeight = FontWeight.Medium, fontSize = 13.sp
+                        )
+                    }
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, null, tint = CyanSim, modifier = Modifier.size(16.dp))
+                        Text(
+                            "DNS, HTTP ו-HTTPS מוגשים מהמטמון",
+                            color = Color.White.copy(0.9f), fontWeight = FontWeight.Medium, fontSize = 13.sp
+                        )
+                    }
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Info, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(16.dp))
+                        Text(
+                            "אתרים שלא נשאבו לא ייטענו",
+                            color = Color.White.copy(0.45f), style = MaterialTheme.typography.bodySmall, lineHeight = 16.sp
+                        )
+                    }
                 }
             }
 
-            // Serve stats
+            // Stats
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LiveStat(Modifier.weight(1f), label = "הוגש",   value = "${uiState.sessionCacheHits}", color = BlueServe)
-                LiveStat(Modifier.weight(1f), label = "במטמון", value = "${uiState.cacheEntryCount}",  color = BlueServe)
+                StatBox(Modifier.weight(1f), "הוגש",   "${uiState.sessionCacheHits}", CyanSim)
+                StatBox(Modifier.weight(1f), "במטמון", "${uiState.cacheEntryCount}",  CyanSim)
+                StatBox(Modifier.weight(1f), "שמור",   formatMb(uiState.cacheSizeMb), CyanSim)
             }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper composables
+// Storage summary
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun LiveStat(modifier: Modifier, label: String, value: String, color: Color) {
+private fun StorageSummaryRow(uiState: UiState) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        MiniStatCard(
+            modifier = Modifier.weight(1f),
+            label    = "בקשות שמורות",
+            value    = "${uiState.cacheEntryCount}",
+            unit     = "URLs",
+            color    = GreenAbsorb
+        )
+        MiniStatCard(
+            modifier = Modifier.weight(1f),
+            label    = "נפח מטמון",
+            value    = "%.1f".format(uiState.cacheSizeMb),
+            unit     = "MB",
+            color    = CyanSim
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Small reusable components
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun StatBox(modifier: Modifier, label: String, value: String, color: Color) {
     Box(
-        modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.1f)).padding(12.dp)
+        modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(0.09f)).padding(12.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(value, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = color)
-            Text(label, color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
+            Text(value, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, color = Color.White.copy(0.45f), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
 
 @Composable
 private fun MiniStatCard(modifier: Modifier, label: String, value: String, unit: String, color: Color) {
-    Card(modifier = modifier, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardBg)) {
+    Card(
+        modifier = modifier,
+        shape    = RoundedCornerShape(14.dp),
+        colors   = CardDefaults.cardColors(containerColor = CardBg)
+    ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, color = Color.White.copy(alpha = 0.4f), style = MaterialTheme.typography.labelSmall)
+            Text(label, color = Color.White.copy(0.38f), style = MaterialTheme.typography.labelSmall)
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(value, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = color)
-                Text(unit, color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp,
-                     modifier = Modifier.padding(bottom = 3.dp))
+                Text(value, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(unit, color = Color.White.copy(0.38f), fontSize = 12.sp, modifier = Modifier.padding(bottom = 3.dp))
             }
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Format helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+private fun formatMb(mb: Float): String =
+    if (mb >= 1024f) "${"%.2f".format(mb / 1024f)} GB"
+    else "${"%.1f".format(mb)} MB"
+
+private fun formatKb(kb: Float): String =
+    if (kb >= 1024f) "${"%.1f".format(kb / 1024f)} MB"
+    else "${"%.0f".format(kb)} KB"
