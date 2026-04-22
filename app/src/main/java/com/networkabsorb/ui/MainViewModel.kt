@@ -32,7 +32,10 @@ data class UiState(
     val recentTraffic: List<TrafficEvent> = emptyList(),
     val aiInsights: Map<String, Any> = emptyMap(),
     val exportedCaFile: File?      = null,
-    val errorMessage: String?      = null
+    val errorMessage: String?      = null,
+    // Live session counters (reset when VPN starts)
+    val sessionRequests: Int       = 0,
+    val sessionBytesKb: Float      = 0f
 )
 
 @HiltViewModel
@@ -72,7 +75,12 @@ class MainViewModel @Inject constructor(
             action = InternetExtractorVpnService.ACTION_START_ABSORB
         }
         app.startForegroundService(intent)
-        _uiState.update { it.copy(vpnRunning = true, mode = InternetExtractorVpnService.Mode.ABSORB) }
+        _uiState.update { it.copy(
+            vpnRunning = true,
+            mode = InternetExtractorVpnService.Mode.ABSORB,
+            sessionRequests = 0,
+            sessionBytesKb = 0f
+        ) }
     }
 
     fun startServing() {
@@ -81,7 +89,12 @@ class MainViewModel @Inject constructor(
             action = InternetExtractorVpnService.ACTION_START_SERVE
         }
         app.startForegroundService(intent)
-        _uiState.update { it.copy(vpnRunning = true, mode = InternetExtractorVpnService.Mode.SERVE) }
+        _uiState.update { it.copy(
+            vpnRunning = true,
+            mode = InternetExtractorVpnService.Mode.SERVE,
+            sessionRequests = 0,
+            sessionBytesKb = 0f
+        ) }
     }
 
     fun stopVpn() {
@@ -149,9 +162,16 @@ class MainViewModel @Inject constructor(
         trafficLogger.events.collect { event ->
             _uiState.update { state ->
                 val updated = (listOf(event) + state.recentTraffic).take(100)
-                state.copy(recentTraffic = updated)
+                val withSession = if (event is TrafficEvent.Response)
+                    state.copy(
+                        recentTraffic  = updated,
+                        sessionRequests = state.sessionRequests + 1,
+                        sessionBytesKb  = state.sessionBytesKb + event.sizeBytes / 1024f
+                    )
+                else
+                    state.copy(recentTraffic = updated)
+                withSession
             }
-            // Update cache stats on each response
             if (event is TrafficEvent.Response) refreshCacheStats()
         }
     }

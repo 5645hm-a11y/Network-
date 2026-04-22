@@ -5,7 +5,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ProxyInfo
 import android.net.VpnService
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -24,17 +26,15 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Core VPN service that routes all device traffic through our local proxy.
+ * VPN service that routes HTTP/HTTPS traffic through our local proxy.
  *
- * Architecture:
- *   Device apps → VPN tun0 interface → PacketProcessor → LocalHttpProxyServer
- *                                                               ↓
- *                                                    CacheEngine (ABSORB mode)
- *                                                    or CacheEngine (SERVE mode)
- *
- * Two operating modes:
- *   ABSORB – online, intercept + forward + cache everything
- *   SERVE  – offline, intercept + serve from cache (no real network needed)
+ * Interception strategy:
+ *   - VPN established so we can set a system-wide HTTP proxy (API 29+)
+ *   - setHttpProxy() tells all apps to route HTTP/HTTPS through localhost:PROXY_PORT
+ *   - LocalHttpProxyServer receives standard CONNECT/GET requests from apps
+ *   - Our app is excluded from the VPN via addDisallowedApplication(), so the
+ *     proxy's own upstream connections bypass the VPN (no routing loop)
+ *   - TunDrainer keeps the TUN fd drained to avoid kernel buffer overflow
  */
 @AndroidEntryPoint
 class InternetExtractorVpnService : VpnService() {
@@ -47,13 +47,10 @@ class InternetExtractorVpnService : VpnService() {
         const val ACTION_STOP         = "com.networkabsorb.action.STOP"
 
         const val NOTIFICATION_ID = 1001
-        const val CHANNEL_ID = "network_absorb_channel"
+        const val CHANNEL_ID      = "network_absorb_channel"
 
-        // Local proxy listens on this port inside the VPN namespace
-        const val PROXY_PORT = 8118
-        // VPN virtual interface address
+        const val PROXY_PORT  = 8118
         const val VPN_ADDRESS = "10.0.0.2"
-        const val VPN_ROUTE   = "0.0.0.0"
         const val VPN_DNS     = "8.8.8.8"
     }
 
@@ -64,8 +61,8 @@ class InternetExtractorVpnService : VpnService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var proxyServer: LocalHttpProxyServer? = null
-    private var packetProcessor: PacketProcessor? = null
+    private var proxyServer: LocalHttpProxyServer?  = null
+    private var tunDrainer:  TunDrainer?            = null
 
     enum class Mode { ABSORB, SERVE }
     private var currentMode = Mode.ABSORB
@@ -81,7 +78,7 @@ class InternetExtractorVpnService : VpnService() {
                 return START_NOT_STICKY
             }
             ACTION_START_SERVE -> currentMode = Mode.SERVE
-            else -> currentMode = Mode.ABSORB
+            else               -> currentMode = Mode.ABSORB
         }
 
         startForeground(NOTIFICATION_ID, buildNotification())
@@ -115,31 +112,19 @@ class InternetExtractorVpnService : VpnService() {
 
             Log.i(TAG, "VPN interface established in $currentMode mode")
 
-            // Start local HTTPS proxy first so the packet processor can forward to it
+            // Start the local HTTP/HTTPS proxy server
             proxyServer = LocalHttpProxyServer(
-                port              = PROXY_PORT,
-                cacheEngine       = cacheEngine,
+                port               = PROXY_PORT,
+                cacheEngine        = cacheEngine,
                 certificateManager = certificateManager,
-                trafficLogger     = trafficLogger,
-                mode              = currentMode
+                trafficLogger      = trafficLogger,
+                mode               = currentMode
             )
+            serviceScope.launch { proxyServer?.start() }
 
-            serviceScope.launch {
-                proxyServer?.start()
-            }
-
-            // Packet processor reads raw IP packets from the VPN fd and
-            // redirects TCP connections to our local proxy
-            packetProcessor = PacketProcessor(
-                vpnFd       = vpnInterface!!.fileDescriptor,
-                proxyPort   = PROXY_PORT,
-                vpnService  = this,
-                scope       = serviceScope
-            )
-
-            serviceScope.launch {
-                packetProcessor?.run()
-            }
+            // Drain TUN fd so the kernel buffer never fills up
+            tunDrainer = TunDrainer(vpnInterface!!.fileDescriptor)
+            serviceScope.launch(Dispatchers.IO) { tunDrainer?.run() }
 
         } catch (e: Exception) {
             Log.e(TAG, "Error starting VPN", e)
@@ -149,35 +134,36 @@ class InternetExtractorVpnService : VpnService() {
 
     private fun stopVpn() {
         Log.i(TAG, "Stopping VPN")
-        packetProcessor?.stop()
+        tunDrainer?.stop()
         proxyServer?.stop()
         vpnInterface?.close()
         vpnInterface = null
+        tunDrainer   = null
+        proxyServer  = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    /**
-     * Builds the VPN interface using Android's VpnService.Builder.
-     * Routes all IPv4 traffic through the tunnel.
-     */
     private fun buildVpnInterface(): ParcelFileDescriptor? {
-        return Builder()
+        val builder = Builder()
             .setSession(getString(R.string.vpn_session_name))
-            // Virtual interface gets this IP
             .addAddress(VPN_ADDRESS, 32)
-            // Capture all traffic
-            .addRoute(VPN_ROUTE, 0)
-            // Use Google DNS (we will also cache DNS in future iterations)
+            .addRoute("0.0.0.0", 0)          // capture all IPv4 traffic
             .addDnsServer(VPN_DNS)
             .addDnsServer("8.8.4.4")
-            // MTU matching typical WiFi
             .setMtu(1500)
-            // Blocking mode so we can read packets synchronously
             .setBlocking(true)
-            // Allow our own app's traffic to bypass the VPN (avoid loops)
+            // Our own app's sockets bypass the VPN — no routing loop for proxy upstream
             .addDisallowedApplication(packageName)
-            .establish()
+
+        // Tell every app on this device to use our local HTTP proxy (API 29+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setHttpProxy(
+                ProxyInfo.buildDirectProxy("127.0.0.1", PROXY_PORT)
+            )
+        }
+
+        return builder.establish()
     }
 
     // -------------------------------------------------------------------------

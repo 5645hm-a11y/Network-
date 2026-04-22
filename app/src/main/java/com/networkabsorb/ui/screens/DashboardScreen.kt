@@ -85,24 +85,51 @@ fun DashboardScreen(
             onStop  = { viewModel.stopVpn() }
         )
 
-        // Stats row
+        // Live session stats (shown while absorbing/serving)
+        if (uiState.vpnRunning) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                StatCard(
+                    modifier = Modifier.weight(1f),
+                    label    = if (uiState.mode == InternetExtractorVpnService.Mode.ABSORB)
+                                   "שאבתי" else "הגשתי",
+                    value    = "${uiState.sessionRequests}",
+                    unit     = "בקשות",
+                    icon     = Icons.Default.SwapVert
+                )
+                StatCard(
+                    modifier = Modifier.weight(1f),
+                    label    = "נפח סשן",
+                    value    = if (uiState.sessionBytesKb >= 1024f)
+                                   "%.1f".format(uiState.sessionBytesKb / 1024f)
+                               else
+                                   "%.0f".format(uiState.sessionBytesKb),
+                    unit     = if (uiState.sessionBytesKb >= 1024f) "MB" else "KB",
+                    icon     = Icons.Default.DataUsage
+                )
+            }
+        }
+
+        // Total cache stats row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StatCard(
                 modifier = Modifier.weight(1f),
-                label    = "Cached",
+                label    = "סך הכל",
                 value    = "${uiState.cacheEntryCount}",
-                unit     = "requests",
+                unit     = "שמורות",
                 icon     = Icons.Default.Storage
             )
             StatCard(
                 modifier = Modifier.weight(1f),
-                label    = "Cache Size",
+                label    = "גודל מטמון",
                 value    = "%.1f".format(uiState.cacheSizeMb),
                 unit     = "MB",
-                icon     = Icons.Default.DataUsage
+                icon     = Icons.Default.Folder
             )
         }
 
