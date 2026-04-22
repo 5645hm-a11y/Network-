@@ -30,14 +30,7 @@ interface CacheDao {
     @Query("SELECT SUM(sizeBytes) FROM cached_responses")
     suspend fun totalSizeBytes(): Long?
 
-    /** Remove entries with lowest priority to free [targetBytes] of space */
-    @Query("""
-        DELETE FROM cached_responses WHERE key IN (
-            SELECT key FROM cached_responses
-            ORDER BY (accessCount * 0.6 + (timestampMs / 1000) * 0.4) ASC
-            LIMIT :limit
-        )
-    """)
+    @Query("DELETE FROM cached_responses WHERE key IN (SELECT key FROM cached_responses ORDER BY accessCount ASC LIMIT :limit)")
     suspend fun evictLeastValuable(limit: Int)
 
     @Query("DELETE FROM cached_responses WHERE timestampMs + ttlMs < :nowMs AND ttlMs > 0")

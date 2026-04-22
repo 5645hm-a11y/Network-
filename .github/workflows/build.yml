@@ -48,15 +48,17 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          set -e
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log
+          exit ${PIPESTATUS[0]}
 
-      - name: Show build logs on failure
+      - name: Show build errors on failure
         if: failure()
         run: |
-          find . -name "*.log" -path "*/build/*" | xargs grep -l "error:" 2>/dev/null | head -3 | xargs cat 2>/dev/null | tail -100 || true
+          echo "=== LAST 150 LINES OF BUILD LOG ==="
+          tail -150 /tmp/build.log
+          echo "=== ERROR LINES ==="
+          grep -n "error:" /tmp/build.log | head -30 || true
+          grep -n "^e: " /tmp/build.log | head -30 || true
 
       - name: Upload Debug APK
         if: success()
