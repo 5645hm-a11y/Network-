@@ -2,6 +2,7 @@ package com.networkabsorb.ai
 
 import android.util.Log
 import com.networkabsorb.cache.CacheEngine
+import com.networkabsorb.cache.CachedResponse
 import com.networkabsorb.logger.TrafficLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,25 +12,20 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.InetSocketAddress
-import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * AI-driven proactive absorber.
+ * Proactive absorber — fetches internet content DIRECTLY (no proxy).
  *
- * While the VPN is in ABSORB mode this engine runs in the background and
- * systematically downloads high-value internet content through the local
- * proxy so it gets stored in the cache — even if the user never visits
- * those URLs manually.
+ * Our app is excluded from the VPN via addDisallowedApplication(), so a plain
+ * OkHttpClient connects straight to the internet without routing through TUN.
+ * Responses are stored in CacheEngine manually and logged to TrafficLogger so
+ * the UI shows live absorption stats.
  *
- * Strategy (four layers):
- *  1. PASSIVE  — content the user actually visits is cached automatically by proxy
- *  2. SEED     — curated list of universally-useful URLs (news, CDN, APIs)
- *  3. CRAWL    — follows links found in already-absorbed HTML pages
- *  4. PREDICT  — uses PredictionEngine history to pre-fetch likely-needed URLs
+ * The previous proxy-based approach silently failed: OkHttp inside our app
+ * rejected the MITM certificate presented by our own proxy → SSLException → nothing cached.
  */
 @Singleton
 class ProactiveAbsorber @Inject constructor(
@@ -39,50 +35,45 @@ class ProactiveAbsorber @Inject constructor(
 ) {
     companion object {
         private const val TAG = "ProactiveAbsorber"
-        private const val PROXY_PORT = 8118
 
-        // Curated seed URLs — high value for most users
         private val SEED_URLS = listOf(
-            // Search
-            "https://www.google.com/",
-            "https://www.bing.com/",
-
-            // News (light pages)
-            "https://news.google.com/",
-            "https://www.bbc.com/news",
-            "https://edition.cnn.com/",
-
-            // Knowledge
+            // Reference / knowledge
             "https://en.wikipedia.org/wiki/Main_Page",
             "https://he.wikipedia.org/wiki/%D7%A2%D7%9E%D7%95%D7%93_%D7%A8%D7%90%D7%A9%D7%99",
-
-            // Common CDN resources cached globally
+            "https://www.wikipedia.org/",
+            // News
+            "https://www.bbc.com/news",
+            "https://news.google.com/",
+            "https://www.ynet.co.il/",
+            // Maps / navigation (open-source, no cert-pinning)
+            "https://www.openstreetmap.org/",
+            "https://nominatim.openstreetmap.org/search?q=israel&format=json",
+            // Utility APIs
+            "https://api.ipify.org/?format=json",
+            "https://worldtimeapi.org/api/ip",
+            "https://wttr.in/?format=j1",
+            // CDN resources used by most sites
             "https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js",
             "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css",
             "https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap",
-
-            // Weather
-            "https://wttr.in/?format=j1",
-
-            // Common APIs
-            "https://api.ipify.org/?format=json",
-            "https://worldtimeapi.org/api/ip"
+            // Search
+            "https://www.google.com/",
+            "https://duckduckgo.com/"
         )
 
-        private const val MAX_CRAWL_DEPTH  = 2
-        private const val MAX_CRAWL_URLS   = 200
-        private const val DELAY_BETWEEN_MS = 300L   // be polite to servers
-        private const val CONNECT_TIMEOUT  = 10L
-        private const val READ_TIMEOUT     = 20L
+        private const val MAX_CRAWL_URLS   = 300
+        private const val DELAY_BETWEEN_MS = 250L
+        private const val CONNECT_TIMEOUT  = 12L
+        private const val READ_TIMEOUT     = 25L
+        private const val TTL_MS           = 7 * 24 * 3600_000L  // 7 days
     }
 
     private var job: Job? = null
-    private var quotaBytes = 500L * 1024 * 1024  // default 500 MB
+    @Volatile var quotaBytes = 500L * 1024 * 1024
 
-    // HTTP client routed through our local proxy — responses get cached automatically
+    /** Direct HTTP client — our app bypasses VPN so this hits the real internet. */
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", PROXY_PORT)))
             .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
             .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS)
             .followRedirects(true)
@@ -92,57 +83,50 @@ class ProactiveAbsorber @Inject constructor(
     fun start(scope: CoroutineScope, quotaMb: Int) {
         quotaBytes = quotaMb.toLong() * 1024 * 1024
         job = scope.launch(Dispatchers.IO) {
-            Log.i(TAG, "Proactive absorber started (quota=${quotaMb}MB)")
-            try {
-                absorb(this)
-            } catch (e: Exception) {
-                Log.e(TAG, "Absorber error", e)
-            }
+            Log.i(TAG, "Absorber started (quota=${quotaMb}MB)")
+            delay(1500)  // let VPN interface fully establish first
+            try { absorb(this) }
+            catch (e: Exception) { Log.e(TAG, "Absorber error", e) }
         }
     }
 
     fun stop() {
         job?.cancel()
         job = null
-        Log.i(TAG, "Proactive absorber stopped")
+        Log.i(TAG, "Absorber stopped")
     }
 
-    // ─── Absorption pipeline ──────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // Absorption pipeline
+    // ─────────────────────────────────────────────────────────────────────────
 
     private suspend fun absorb(scope: CoroutineScope) {
         val visited = mutableSetOf<String>()
 
-        // Layer 4: predictions from previous sessions
-        val predicted = predictionEngine.predictByTimeOfDay()
-        for (url in predicted) {
-            if (!scope.isActive) return
-            if (shouldStop()) return
-            fetchAndCache(url, visited)
+        // Predicted URLs from previous sessions
+        predictionEngine.predictByTimeOfDay().forEach { url ->
+            if (!scope.isActive || shouldStop()) return
+            fetchAndStore(url, visited)
             delay(DELAY_BETWEEN_MS)
         }
 
-        // Layer 2: seed URLs
+        // Seed URLs + crawl (depth 2)
         for (url in SEED_URLS) {
-            if (!scope.isActive) return
-            if (shouldStop()) return
-            val html = fetchAndCache(url, visited)
+            if (!scope.isActive || shouldStop()) return
+            val html = fetchAndStore(url, visited)
             delay(DELAY_BETWEEN_MS)
 
-            // Layer 3: crawl links found in seed pages (depth 1)
-            if (html != null && MAX_CRAWL_DEPTH > 0) {
-                val links = extractLinks(html, url).take(15)
+            if (html != null) {
+                val links = extractLinks(html, url).take(20)
                 for (link in links) {
-                    if (!scope.isActive) return
-                    if (shouldStop()) return
-                    val subHtml = fetchAndCache(link, visited)
+                    if (!scope.isActive || shouldStop()) return
+                    val subHtml = fetchAndStore(link, visited)
                     delay(DELAY_BETWEEN_MS)
 
-                    // depth 2
-                    if (subHtml != null && MAX_CRAWL_DEPTH > 1) {
-                        val subLinks = extractLinks(subHtml, link).take(5)
-                        for (sub2 in subLinks) {
+                    subHtml?.let { sh ->
+                        extractLinks(sh, link).take(6).forEach { sub ->
                             if (!scope.isActive || shouldStop()) return
-                            fetchAndCache(sub2, visited)
+                            fetchAndStore(sub, visited)
                             delay(DELAY_BETWEEN_MS)
                         }
                     }
@@ -152,45 +136,65 @@ class ProactiveAbsorber @Inject constructor(
             }
         }
 
-        Log.i(TAG, "Proactive absorption complete — ${visited.size} URLs fetched")
+        Log.i(TAG, "Absorption complete — ${visited.size} URLs absorbed")
     }
 
-    // ─── Fetch helpers ────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // Direct fetch + store in CacheEngine
+    // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * GETs [url] through the local proxy (which caches it automatically).
-     * Returns the response body as String if HTML, null otherwise.
-     */
-    private fun fetchAndCache(url: String, visited: MutableSet<String>): String? {
+    private fun fetchAndStore(url: String, visited: MutableSet<String>): String? {
         if (url in visited) return null
         visited.add(url)
 
         return try {
-            val req  = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) Chrome/120")
+                .header("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
+                .header("Accept-Language", "en,he;q=0.8")
+                .build()
+
             val resp = httpClient.newCall(req).execute()
-            val ct   = resp.header("Content-Type") ?: ""
-            val body = resp.body?.string()
+            val ct   = resp.header("Content-Type") ?: "application/octet-stream"
+            val body = resp.body?.bytes() ?: return null
             resp.close()
 
-            Log.d(TAG, "Absorbed [${resp.code}] $url")
+            if (body.isEmpty()) return null
+
+            // Store directly in cache — bypasses proxy MITM issues entirely
+            cacheEngine.put("GET:$url", CachedResponse(
+                statusCode  = resp.code,
+                headers     = resp.headers.joinToString("\n") { "${it.first}::${it.second}" },
+                body        = body,
+                url         = url,
+                method      = "GET",
+                contentType = ct,
+                timestampMs = System.currentTimeMillis(),
+                ttlMs       = TTL_MS
+            ))
+
+            // Emit to TrafficLogger so UI stats update
+            trafficLogger.logResponse(url, resp.code, body.size)
             predictionEngine.recordAccess(url)
 
-            if (ct.contains("html", ignoreCase = true)) body else null
+            Log.d(TAG, "[${resp.code}] ${body.size}B $url")
+
+            if (ct.contains("html", ignoreCase = true)) String(body, Charsets.UTF_8) else null
+
         } catch (e: Exception) {
             Log.d(TAG, "Skip $url: ${e.message}")
             null
         }
     }
 
-    /** Extracts absolute http/https links from HTML text. */
     private fun extractLinks(html: String, baseUrl: String): List<String> {
         val base = try { java.net.URL(baseUrl) } catch (_: Exception) { return emptyList() }
         return Regex("""href=["']([^"'#?]+)["']""")
             .findAll(html)
             .mapNotNull { m ->
                 try {
-                    val raw = m.groupValues[1]
-                    val abs = java.net.URL(base, raw).toString()
+                    val abs = java.net.URL(base, m.groupValues[1]).toString()
                     if (abs.startsWith("http")) abs else null
                 } catch (_: Exception) { null }
             }
@@ -199,8 +203,5 @@ class ProactiveAbsorber @Inject constructor(
             .toList()
     }
 
-    private suspend fun shouldStop(): Boolean {
-        val used = cacheEngine.totalSizeBytes()
-        return used >= quotaBytes
-    }
+    private suspend fun shouldStop(): Boolean = cacheEngine.totalSizeBytes() >= quotaBytes
 }

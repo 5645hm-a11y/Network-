@@ -4,6 +4,7 @@ import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,566 +18,595 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.networkabsorb.ui.MainViewModel
 import com.networkabsorb.ui.UiState
-import com.networkabsorb.vpn.InternetExtractorVpnService
+import com.networkabsorb.vpn.InternetExtractorVpnService.Mode
 
-// ── Design tokens ───────────────────────────────────────────────────────────
-private val GreenAbsorb = Color(0xFF00E676)
-private val CyanSim     = Color(0xFF00BCD4)
-private val OrangeWarn  = Color(0xFFFF9800)
-private val RedStop     = Color(0xFFEF5350)
-private val CardBg      = Color(0xFF131B2E)
-private val PageBg      = Color(0xFF0A0F1E)
-private val SurfaceBg   = Color(0xFF1C2540)
+// ── Palette ─────────────────────────────────────────────────────────────────
+private val BgDeep      = Color(0xFF060914)
+private val BgCard      = Color(0xFF0C1428)
+private val BgSurface   = Color(0xFF111D35)
+private val Electric    = Color(0xFF00B4FF)
+private val Mint        = Color(0xFF00F5A0)
+private val VioletAI    = Color(0xFF9B72FF)
+private val CyanSim     = Color(0xFF00E5FF)
+private val Amber       = Color(0xFFFFB800)
+private val RedStop     = Color(0xFFFF3B30)
+private val TextPrimary = Color(0xFFECF0FF)
+private val TextMuted   = Color(0xFF5A6A8A)
 
 @Composable
-fun DashboardScreen(
-    viewModel: MainViewModel,
-    onNavigateTo: (String) -> Unit
-) {
+fun DashboardScreen(viewModel: MainViewModel, onNavigateTo: (String) -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
 
     val vpnLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) viewModel.startAbsorbing()
-    }
+    ) { if (it.resultCode == Activity.RESULT_OK) viewModel.startAbsorbing() }
 
     val certLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { viewModel.onCaCertInstalled() }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(PageBg)
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
+    Box(modifier = Modifier.fillMaxSize().background(BgDeep)) {
+        // Subtle gradient orb in background
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Electric.copy(0.07f), Color.Transparent),
+                    center = Offset(size.width * 0.8f, size.height * 0.15f),
+                    radius = size.width * 0.7f
+                )
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(VioletAI.copy(0.06f), Color.Transparent),
+                    center = Offset(size.width * 0.1f, size.height * 0.6f),
+                    radius = size.width * 0.6f
+                )
+            )
+        }
 
-        // ── Header ──────────────────────────────────────────────────────────
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment     = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column {
-                Text(
-                    "Virtual SIM",
-                    style      = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color      = Color.White
-                )
-                Text(
-                    "שאיבת אינטרנט · גלישה ללא רשת",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.45f)
-                )
-            }
-            Row {
-                IconButton(onClick = { onNavigateTo("traffic") }) {
-                    Icon(Icons.Default.Timeline, null, tint = Color.White.copy(0.6f))
-                }
-                IconButton(onClick = { onNavigateTo("settings") }) {
-                    Icon(Icons.Default.Settings, null, tint = Color.White.copy(0.6f))
-                }
-            }
-        }
+            TopBar(uiState, onNavigateTo)
 
-        // ── CA cert warning ──────────────────────────────────────────────────
-        if (!uiState.caCertReady && !uiState.vpnRunning) {
-            CaCertBanner {
-                try { certLauncher.launch(viewModel.buildCaInstallIntent()) }
-                catch (_: Exception) { viewModel.onCaCertInstalled() }
+            if (!uiState.caCertReady && !uiState.vpnRunning) {
+                CertWarning { try { certLauncher.launch(viewModel.buildCaInstallIntent()) }
+                              catch (_: Exception) { viewModel.onCaCertInstalled() } }
             }
-        }
 
-        // ── Main card — switches based on VPN state ──────────────────────────
-        when {
-            !uiState.vpnRunning -> ReadyCard(
-                uiState  = uiState,
-                onAbsorb = {
-                    val prep = viewModel.prepareVpn()
-                    if (prep != null) vpnLauncher.launch(prep)
-                    else viewModel.startAbsorbing()
+            AiAgentPanel(uiState)
+
+            MainCard(
+                uiState   = uiState,
+                onAbsorb  = {
+                    val p = viewModel.prepareVpn()
+                    if (p != null) vpnLauncher.launch(p) else viewModel.startAbsorbing()
                 },
-                onServe  = { viewModel.startServing() },
-                onQuota  = { viewModel.setQuota(it) }
+                onServe   = { viewModel.startServing() },
+                onStop    = { viewModel.stopVpn() },
+                onQuota   = { viewModel.setQuota(it) }
             )
-            uiState.mode == InternetExtractorVpnService.Mode.ABSORB -> AbsorbingCard(
-                uiState = uiState,
-                onStop  = { viewModel.stopVpn() }
-            )
-            else -> VirtualSimActiveCard(
-                uiState = uiState,
-                onStop  = { viewModel.stopVpn() }
-            )
-        }
 
-        // ── Storage summary ──────────────────────────────────────────────────
-        StorageSummaryRow(uiState)
+            if (uiState.vpnRunning && uiState.mode == Mode.ABSORB) {
+                DomainFeed(uiState)
+            }
+
+            StatsRow(uiState)
+        }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CA cert banner
+// Top bar
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun CaCertBanner(onInstall: () -> Unit) {
-    Card(
-        shape  = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = OrangeWarn.copy(0.12f))
+private fun TopBar(uiState: UiState, onNavigateTo: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment     = Alignment.CenterVertically
     ) {
-        Row(
-            Modifier.padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment     = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.Lock, null, tint = OrangeWarn, modifier = Modifier.size(26.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("נדרש אישור אבטחה", fontWeight = FontWeight.Bold, color = OrangeWarn, fontSize = 13.sp)
-                Text(
-                    "כדי לשאוב HTTPS – התקן את אישור ה-CA",
-                    color = Color.White.copy(0.65f),
-                    style = MaterialTheme.typography.bodySmall,
-                    lineHeight = 17.sp
-                )
+        Column {
+            Text(
+                "Virtual SIM",
+                fontSize   = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color      = TextPrimary
+            )
+            Text(
+                "שאיבת אינטרנט · גלישה ללא רשת",
+                fontSize = 12.sp,
+                color    = TextMuted
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Status dot
+            val dotColor = when {
+                !uiState.vpnRunning                -> TextMuted
+                uiState.mode == Mode.ABSORB -> Mint
+                else                               -> CyanSim
             }
-            Button(
-                onClick = onInstall,
-                colors  = ButtonDefaults.buttonColors(containerColor = OrangeWarn),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-            ) {
-                Text("התקן", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Box(
+                Modifier.size(8.dp).clip(CircleShape).background(dotColor)
+                    .align(Alignment.CenterVertically)
+            )
+            IconButton(onClick = { onNavigateTo("traffic") }) {
+                Icon(Icons.Default.Timeline, null, tint = TextMuted, modifier = Modifier.size(20.dp))
+            }
+            IconButton(onClick = { onNavigateTo("settings") }) {
+                Icon(Icons.Default.Settings, null, tint = TextMuted, modifier = Modifier.size(20.dp))
             }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Idle / ready card
+// Cert warning
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ReadyCard(
+private fun CertWarning(onInstall: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Amber.copy(0.12f))
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment     = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.Lock, null, tint = Amber, modifier = Modifier.size(20.dp))
+        Column(Modifier.weight(1f)) {
+            Text("נדרש אישור CA", fontWeight = FontWeight.Bold, color = Amber, fontSize = 13.sp)
+            Text("נדרש לשאיבת HTTPS", color = TextMuted, fontSize = 11.sp)
+        }
+        Button(
+            onClick = onInstall,
+            colors  = ButtonDefaults.buttonColors(containerColor = Amber),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+            shape   = RoundedCornerShape(10.dp)
+        ) {
+            Text("התקן", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Agent Panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun AiAgentPanel(uiState: UiState) {
+    val agent = uiState.agentStatus
+
+    val inf = rememberInfiniteTransition(label = "ai")
+    val pulse by inf.animateFloat(
+        initialValue = 0.5f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "pulse"
+    )
+
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(BgCard)
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment     = Alignment.CenterVertically
+    ) {
+        // Brain icon with glow
+        Box(
+            Modifier.size(38.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(VioletAI.copy(if (agent.thinking) pulse * 0.3f else 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (agent.thinking) {
+                CircularProgressIndicator(
+                    modifier  = Modifier.size(20.dp),
+                    color     = VioletAI,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(Icons.Default.AutoAwesome, null, tint = VioletAI, modifier = Modifier.size(20.dp))
+            }
+        }
+
+        Column(Modifier.weight(1f)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                Text(
+                    "AI Agent",
+                    fontSize   = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = VioletAI
+                )
+                if (!agent.hasKey) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(4.dp))
+                            .background(Amber.copy(0.2f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text("ללא API Key", fontSize = 9.sp, color = Amber)
+                    }
+                }
+            }
+            Text(
+                agent.message,
+                fontSize = 12.sp,
+                color    = TextPrimary.copy(0.85f),
+                lineHeight = 17.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main state card
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun MainCard(
     uiState : UiState,
     onAbsorb: () -> Unit,
     onServe : () -> Unit,
+    onStop  : () -> Unit,
     onQuota : (Int) -> Unit
 ) {
-    Card(
-        shape  = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBg)
+    Box(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(BgCard)
+            .padding(24.dp)
     ) {
-        Column(
-            Modifier.padding(20.dp).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+        when {
+            !uiState.vpnRunning -> IdleContent(uiState, onAbsorb, onServe, onQuota)
+            uiState.mode == Mode.ABSORB -> AbsorbingContent(uiState, onStop)
+            else -> SimActiveContent(uiState, onStop)
+        }
+    }
+}
+
+// ── Idle ─────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun IdleContent(
+    uiState: UiState, onAbsorb: () -> Unit, onServe: () -> Unit, onQuota: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+
+        // Step flow
+        Row(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(BgSurface)
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment     = Alignment.CenterVertically
         ) {
-
-            // Title
-            Row(
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Box(
-                    Modifier.size(52.dp).clip(RoundedCornerShape(14.dp))
-                        .background(
-                            Brush.radialGradient(listOf(GreenAbsorb.copy(0.3f), Color.Transparent))
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.WifiTethering, null, tint = GreenAbsorb, modifier = Modifier.size(28.dp))
-                }
-                Column {
-                    Text("מוכן לשאיבה", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp)
-                    Text(
-                        "WiFi → מטמון → Virtual SIM",
-                        color = Color.White.copy(0.4f),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+            listOf("📶 WiFi", "→", "⬇ שאב", "→", "✈ חו\"ל", "→", "🌐 גלוש").forEach { s ->
+                Text(s, fontSize = 11.sp, color = if (s == "→") TextMuted else TextPrimary,
+                     fontWeight = if (s != "→") FontWeight.Medium else FontWeight.Normal)
             }
+        }
 
-            HorizontalDivider(color = Color.White.copy(0.07f))
-
-            // Quota slider
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("כמות לשאיבה", color = Color.White.copy(0.75f), fontSize = 14.sp)
-                    Text(
-                        if (uiState.quotaMb >= 1024) "${"%.1f".format(uiState.quotaMb / 1024f)} GB"
-                        else "${uiState.quotaMb} MB",
-                        color      = GreenAbsorb,
-                        fontWeight = FontWeight.Bold,
-                        fontSize   = 14.sp
-                    )
-                }
-                Slider(
-                    value         = uiState.quotaMb.toFloat(),
-                    onValueChange = { onQuota(it.toInt()) },
-                    valueRange    = 100f..5120f,
-                    steps         = 49,
-                    colors        = SliderDefaults.colors(
-                        thumbColor         = GreenAbsorb,
-                        activeTrackColor   = GreenAbsorb,
-                        inactiveTrackColor = GreenAbsorb.copy(0.2f)
-                    )
+        // Quota slider
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("כמות לשאיבה", fontSize = 13.sp, color = TextMuted)
+                Text(
+                    if (uiState.quotaMb >= 1024) "${"%.1f".format(uiState.quotaMb / 1024f)} GB"
+                    else "${uiState.quotaMb} MB",
+                    fontSize   = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = Mint
                 )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("100 MB", color = Color.White.copy(0.28f), fontSize = 11.sp)
-                    Text("5 GB",   color = Color.White.copy(0.28f), fontSize = 11.sp)
-                }
+            }
+            Slider(
+                value         = uiState.quotaMb.toFloat(),
+                onValueChange = { onQuota(it.toInt()) },
+                valueRange    = 100f..5120f,
+                steps         = 49,
+                colors        = SliderDefaults.colors(
+                    thumbColor         = Mint,
+                    activeTrackColor   = Mint,
+                    inactiveTrackColor = Mint.copy(0.15f)
+                )
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("100 MB", fontSize = 10.sp, color = TextMuted)
+                Text("5 GB",   fontSize = 10.sp, color = TextMuted)
+            }
+        }
+
+        // Buttons
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick  = onAbsorb,
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape    = RoundedCornerShape(16.dp),
+                colors   = ButtonDefaults.buttonColors(containerColor = Mint)
+            ) {
+                Icon(Icons.Default.CloudDownload, null, Modifier.size(20.dp), tint = Color.Black)
+                Spacer(Modifier.width(10.dp))
+                Text("שאב אינטרנט מה-WiFi",
+                     fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = Color.Black)
             }
 
-            // Step hint
-            StepHint()
-
-            // Buttons
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick  = onAbsorb,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
+            if (uiState.cacheSizeMb > 0f) {
+                OutlinedButton(
+                    onClick  = onServe,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape    = RoundedCornerShape(14.dp),
-                    colors   = ButtonDefaults.buttonColors(containerColor = GreenAbsorb)
+                    colors   = ButtonDefaults.outlinedButtonColors(contentColor = CyanSim),
+                    border   = androidx.compose.foundation.BorderStroke(1.5.dp, CyanSim.copy(0.4f))
                 ) {
-                    Icon(Icons.Default.CloudDownload, null, Modifier.size(20.dp), tint = Color.Black)
+                    Icon(Icons.Default.SimCard, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("שאב אינטרנט מה-WiFi", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color.Black)
-                }
-
-                if (uiState.cacheSizeMb > 0f) {
-                    OutlinedButton(
-                        onClick  = onServe,
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape    = RoundedCornerShape(14.dp),
-                        colors   = ButtonDefaults.outlinedButtonColors(contentColor = CyanSim),
-                        border   = androidx.compose.foundation.BorderStroke(1.5.dp, CyanSim.copy(0.5f))
-                    ) {
-                        Icon(Icons.Default.SimCard, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "הפעל Virtual SIM (${"%.0f".format(uiState.cacheSizeMb)} MB)",
-                            fontWeight = FontWeight.Bold,
-                            fontSize   = 14.sp
-                        )
-                    }
+                    Text(
+                        "הפעל Virtual SIM  ·  ${"%.0f".format(uiState.cacheSizeMb)} MB",
+                        fontWeight = FontWeight.Bold, fontSize = 14.sp
+                    )
                 }
             }
         }
     }
 }
 
-@Composable
-private fun StepHint() {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-            .background(SurfaceBg).padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        StepChip("1", "WiFi", GreenAbsorb)
-        Icon(Icons.Default.ArrowForward, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
-        StepChip("2", "שאב", GreenAbsorb)
-        Icon(Icons.Default.ArrowForward, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
-        StepChip("3", "חו\"ל", CyanSim)
-        Icon(Icons.Default.ArrowForward, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(14.dp).align(Alignment.CenterVertically))
-        StepChip("4", "גלוש", CyanSim)
-    }
-}
+// ── Absorbing ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun RowScope.StepChip(num: String, label: String, color: Color) {
-    Column(
-        Modifier.weight(1f),
-        horizontalAlignment   = Alignment.CenterHorizontally,
-        verticalArrangement   = Arrangement.spacedBy(4.dp)
-    ) {
-        Box(
-            Modifier.size(24.dp).clip(CircleShape).background(color.copy(0.2f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(num, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-        Text(label, color = Color.White.copy(0.6f), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Clip)
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Absorbing card
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun AbsorbingCard(uiState: UiState, onStop: () -> Unit) {
+private fun AbsorbingContent(uiState: UiState, onStop: () -> Unit) {
     val progress = (uiState.absorptionProgressMb / uiState.quotaMb.toFloat()).coerceIn(0f, 1f)
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val dotAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-        label = "dot"
+    val inf = rememberInfiniteTransition(label = "absorb")
+    val ring by inf.animateFloat(
+        0f, 360f,
+        infiniteRepeatable(tween(3000, easing = LinearEasing)),
+        label = "ring"
+    )
+    val pulse by inf.animateFloat(
+        0.5f, 1f,
+        infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "pulse"
     )
 
-    Card(
-        shape  = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBg)
+    Column(
+        horizontalAlignment   = Alignment.CenterHorizontally,
+        verticalArrangement   = Arrangement.spacedBy(20.dp)
     ) {
-        Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-
-            // Header row
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment     = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(Modifier.size(10.dp).clip(CircleShape).background(GreenAbsorb.copy(dotAlpha)))
-                    Text("שואב מהרשת...", fontWeight = FontWeight.Bold, color = GreenAbsorb, fontSize = 16.sp)
-                }
-                TextButton(
-                    onClick = onStop,
-                    colors  = ButtonDefaults.textButtonColors(contentColor = RedStop)
-                ) {
-                    Icon(Icons.Default.Stop, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("עצור", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // Progress bar
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                LinearProgressIndicator(
-                    progress   = { progress },
-                    modifier   = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
-                    color      = GreenAbsorb,
-                    trackColor = GreenAbsorb.copy(0.15f)
+        // Animated ring progress
+        Box(Modifier.size(160.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val stroke = Stroke(12f, cap = StrokeCap.Round)
+                val inset  = 12f
+                val rect   = Size(size.width - inset * 2, size.height - inset * 2)
+                // Track
+                drawArc(Mint.copy(0.1f), 0f, 360f, false, Offset(inset, inset), rect, style = stroke)
+                // Progress
+                drawArc(Mint, -90f, 360f * progress, false, Offset(inset, inset), rect, style = stroke)
+                // Spinning dot
+                drawCircle(Mint.copy(pulse), 8f,
+                    center = Offset(
+                        size.width / 2 + (size.width / 2 - inset) * kotlin.math.cos(Math.toRadians((ring - 90).toDouble())).toFloat(),
+                        size.height / 2 + (size.height / 2 - inset) * kotlin.math.sin(Math.toRadians((ring - 90).toDouble())).toFloat()
+                    )
                 )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        formatMb(uiState.absorptionProgressMb),
-                        color = GreenAbsorb, fontWeight = FontWeight.Bold, fontSize = 13.sp
-                    )
-                    Text(
-                        "מתוך ${formatMb(uiState.quotaMb.toFloat())}",
-                        color = Color.White.copy(0.35f), fontSize = 13.sp
-                    )
-                }
+                // Glow
+                drawCircle(Brush.radialGradient(listOf(Mint.copy(0.15f), Color.Transparent)),
+                    size.minDimension / 2)
             }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "${"%.0f".format(uiState.absorptionProgressMb)} MB",
+                    fontSize   = 22.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color      = Mint
+                )
+                Text(
+                    "מתוך ${uiState.quotaMb} MB",
+                    fontSize = 11.sp,
+                    color    = TextMuted
+                )
+                Text(
+                    "${(progress * 100).toInt()}%",
+                    fontSize   = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color      = TextPrimary
+                )
+            }
+        }
 
-            // Counters
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatBox(Modifier.weight(1f), "בקשות", "${uiState.sessionRequests}", GreenAbsorb)
-                StatBox(Modifier.weight(1f), "נשאב", formatKb(uiState.sessionBytesKb), GreenAbsorb)
-            }
+        // Live counters
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GlowStat(Modifier.weight(1f), "${uiState.sessionRequests}", "בקשות", Mint)
+            GlowStat(Modifier.weight(1f), fmtKb(uiState.sessionBytesKb), "נשאב", Mint)
+        }
 
-            // Domain list
-            if (uiState.topDomains.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text("אתרים שנשמרים:", color = Color.White.copy(0.4f), fontSize = 11.sp)
-                    uiState.topDomains.take(5).forEach { (domain, count) ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment     = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment     = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Box(Modifier.size(6.dp).clip(CircleShape).background(GreenAbsorb.copy(0.55f)))
-                                Text(
-                                    domain,
-                                    color    = Color.White.copy(0.8f),
-                                    fontSize = 13.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.widthIn(max = 200.dp)
-                                )
-                            }
-                            Text("$count", color = GreenAbsorb.copy(0.8f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
+        Button(
+            onClick  = onStop,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape    = RoundedCornerShape(14.dp),
+            colors   = ButtonDefaults.buttonColors(containerColor = RedStop.copy(0.15f))
+        ) {
+            Icon(Icons.Default.Stop, null, Modifier.size(16.dp), tint = RedStop)
+            Spacer(Modifier.width(6.dp))
+            Text("עצור שאיבה", color = RedStop, fontWeight = FontWeight.Bold)
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Virtual SIM active card
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Virtual SIM Active ────────────────────────────────────────────────────────
 
 @Composable
-private fun VirtualSimActiveCard(uiState: UiState, onStop: () -> Unit) {
-    val infiniteTransition = rememberInfiniteTransition(label = "sim")
-    val glow by infiniteTransition.animateFloat(
-        initialValue = 0.4f, targetValue = 0.9f,
-        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+private fun SimActiveContent(uiState: UiState, onStop: () -> Unit) {
+    val inf = rememberInfiniteTransition(label = "sim")
+    val glow by inf.animateFloat(
+        0.3f, 0.9f,
+        infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "glow"
     )
 
-    Card(
-        shape  = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBg)
+    Column(
+        horizontalAlignment   = Alignment.CenterHorizontally,
+        verticalArrangement   = Arrangement.spacedBy(20.dp)
     ) {
-        Column(Modifier.padding(20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // SIM icon with glow
+        Box(
+            Modifier.size(100.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Brush.radialGradient(
+                    listOf(CyanSim.copy(glow * 0.3f), BgSurface)
+                )),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.SimCard, null, tint = CyanSim, modifier = Modifier.size(52.dp))
+        }
 
-            // Header
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("VIRTUAL SIM", fontSize = 11.sp, color = CyanSim, fontWeight = FontWeight.Bold,
+                 letterSpacing = 3.sp)
+            Text("פעיל — גולש ממטמון", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold,
+                 color = TextPrimary)
+        }
+
+        // Checklist
+        Column(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(CyanSim.copy(0.07f))
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("DNS — מוגש ממטמון", "HTTP/HTTPS — מוגש ממטמון",
+                   "אפליקציות שנשאבו — עובדות רגיל").forEach { item ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CheckCircle, null, tint = CyanSim, modifier = Modifier.size(14.dp))
+                    Text(item, fontSize = 12.sp, color = TextPrimary.copy(0.85f))
+                }
+            }
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GlowStat(Modifier.weight(1f), "${uiState.sessionCacheHits}", "הוגש", CyanSim)
+            GlowStat(Modifier.weight(1f), "${uiState.cacheEntryCount}", "URLs", CyanSim)
+            GlowStat(Modifier.weight(1f), fmtMb(uiState.cacheSizeMb), "שמור", CyanSim)
+        }
+
+        Button(
+            onClick  = onStop,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape    = RoundedCornerShape(14.dp),
+            colors   = ButtonDefaults.buttonColors(containerColor = RedStop.copy(0.15f))
+        ) {
+            Icon(Icons.Default.Stop, null, Modifier.size(16.dp), tint = RedStop)
+            Spacer(Modifier.width(6.dp))
+            Text("כבה Virtual SIM", color = RedStop, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Domain feed (during absorption)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun DomainFeed(uiState: UiState) {
+    if (uiState.topDomains.isEmpty()) return
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(BgCard)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text("אתרים שנשאבים", fontSize = 11.sp, color = TextMuted,
+             fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Spacer(Modifier.height(6.dp))
+        uiState.topDomains.take(6).forEach { (domain, count) ->
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().padding(vertical = 3.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment     = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
-                            .background(CyanSim.copy(glow * 0.25f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.SimCard, null, tint = CyanSim, modifier = Modifier.size(22.dp))
-                    }
-                    Column {
-                        Text("Virtual SIM פעיל", fontWeight = FontWeight.Bold, color = CyanSim, fontSize = 16.sp)
-                        Text("גולש ללא רשת מהמטמון", color = Color.White.copy(0.4f), style = MaterialTheme.typography.bodySmall)
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(6.dp).clip(CircleShape).background(Mint.copy(0.7f)))
+                    Text(domain, fontSize = 13.sp, color = TextPrimary.copy(0.9f),
+                         maxLines = 1, overflow = TextOverflow.Ellipsis,
+                         modifier = Modifier.widthIn(max = 220.dp))
                 }
-                TextButton(
-                    onClick = onStop,
-                    colors  = ButtonDefaults.textButtonColors(contentColor = RedStop)
-                ) {
-                    Icon(Icons.Default.Stop, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("עצור", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // Info box
-            Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                    .background(CyanSim.copy(0.08f)).padding(14.dp)
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.CheckCircle, null, tint = CyanSim, modifier = Modifier.size(16.dp))
-                        Text(
-                            "הטלפון עובד ללא WiFi / סלולרי",
-                            color = Color.White.copy(0.9f), fontWeight = FontWeight.Medium, fontSize = 13.sp
-                        )
-                    }
-                    Row(
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.CheckCircle, null, tint = CyanSim, modifier = Modifier.size(16.dp))
-                        Text(
-                            "DNS, HTTP ו-HTTPS מוגשים מהמטמון",
-                            color = Color.White.copy(0.9f), fontWeight = FontWeight.Medium, fontSize = 13.sp
-                        )
-                    }
-                    Row(
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.Info, null, tint = Color.White.copy(0.3f), modifier = Modifier.size(16.dp))
-                        Text(
-                            "אתרים שלא נשאבו לא ייטענו",
-                            color = Color.White.copy(0.45f), style = MaterialTheme.typography.bodySmall, lineHeight = 16.sp
-                        )
-                    }
-                }
-            }
-
-            // Stats
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatBox(Modifier.weight(1f), "הוגש",   "${uiState.sessionCacheHits}", CyanSim)
-                StatBox(Modifier.weight(1f), "במטמון", "${uiState.cacheEntryCount}",  CyanSim)
-                StatBox(Modifier.weight(1f), "שמור",   formatMb(uiState.cacheSizeMb), CyanSim)
+                Text("$count", fontSize = 12.sp, color = Mint, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Storage summary
+// Stats row
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun StorageSummaryRow(uiState: UiState) {
+private fun StatsRow(uiState: UiState) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        MiniStatCard(
-            modifier = Modifier.weight(1f),
-            label    = "בקשות שמורות",
-            value    = "${uiState.cacheEntryCount}",
-            unit     = "URLs",
-            color    = GreenAbsorb
-        )
-        MiniStatCard(
-            modifier = Modifier.weight(1f),
-            label    = "נפח מטמון",
-            value    = "%.1f".format(uiState.cacheSizeMb),
-            unit     = "MB",
-            color    = CyanSim
-        )
+        StatCard(Modifier.weight(1f), "שמורות",  "${uiState.cacheEntryCount}", "URLs",   Electric)
+        StatCard(Modifier.weight(1f), "נפח",     fmtMb(uiState.cacheSizeMb),  "",       Electric)
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Small reusable components
+// Reusable components
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun StatBox(modifier: Modifier, label: String, value: String, color: Color) {
-    Box(
-        modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(0.09f)).padding(12.dp)
+private fun GlowStat(modifier: Modifier, value: String, label: String, color: Color) {
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).background(color.copy(0.08f)).padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(value, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(label, color = Color.White.copy(0.45f), style = MaterialTheme.typography.bodySmall)
-        }
+        Text(value, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = color,
+             maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, fontSize = 10.sp, color = TextMuted)
     }
 }
 
 @Composable
-private fun MiniStatCard(modifier: Modifier, label: String, value: String, unit: String, color: Color) {
-    Card(
-        modifier = modifier,
-        shape    = RoundedCornerShape(14.dp),
-        colors   = CardDefaults.cardColors(containerColor = CardBg)
+private fun StatCard(modifier: Modifier, label: String, value: String, unit: String, color: Color) {
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).background(BgCard).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, color = Color.White.copy(0.38f), style = MaterialTheme.typography.labelSmall)
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(value, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(unit, color = Color.White.copy(0.38f), fontSize = 12.sp, modifier = Modifier.padding(bottom = 3.dp))
-            }
+        Text(label, fontSize = 10.sp, color = TextMuted, fontWeight = FontWeight.Medium)
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(value, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = color,
+                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (unit.isNotEmpty()) Text(unit, fontSize = 11.sp, color = TextMuted,
+                                        modifier = Modifier.padding(bottom = 3.dp))
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Format helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-private fun formatMb(mb: Float): String =
-    if (mb >= 1024f) "${"%.2f".format(mb / 1024f)} GB"
-    else "${"%.1f".format(mb)} MB"
-
-private fun formatKb(kb: Float): String =
-    if (kb >= 1024f) "${"%.1f".format(kb / 1024f)} MB"
-    else "${"%.0f".format(kb)} KB"
+private fun fmtMb(mb: Float) = if (mb >= 1024f) "${"%.2f".format(mb / 1024f)} GB" else "${"%.1f".format(mb)} MB"
+private fun fmtKb(kb: Float) = if (kb >= 1024f) "${"%.1f".format(kb / 1024f)} MB" else "${"%.0f".format(kb)} KB"
