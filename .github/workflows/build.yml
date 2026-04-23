@@ -10,7 +10,7 @@ jobs:
     name: Build Debug APK
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # needed to create GitHub Releases
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -21,54 +21,52 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          flutter-version: '3.27.1'
+          channel: 'stable'
+          cache: true
 
       - name: Set up Android SDK
         run: |
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-34" \
-            "build-tools;34.0.0" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
             --channel=0 2>&1 | grep -v "^\[=" || true
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Generate localisations
+        run: flutter gen-l10n
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
+        run: flutter build apk --debug 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
 
       - name: Show errors on failure
         if: failure()
         run: |
           echo "=== BUILD ERRORS ==="
-          grep -n "error:\|^e: " /tmp/build.log | head -50 || true
+          grep -iE "error:|^e: " /tmp/build.log | head -60 || true
           echo "=== LAST 100 LINES ==="
           tail -100 /tmp/build.log
 
       - name: Rename APK
         if: success()
         run: |
-          cd app/build/outputs/apk/debug/
-          mv *.apk VirtualSIM-debug-${{ github.run_number }}.apk
-          echo "APK_PATH=$(pwd)/VirtualSIM-debug-${{ github.run_number }}.apk" >> $GITHUB_ENV
-          ls -lh
+          APK=build/app/outputs/flutter-apk/app-debug.apk
+          NEW=VirtualSIM-debug-${{ github.run_number }}.apk
+          cp $APK $NEW
+          echo "APK_PATH=$(pwd)/$NEW" >> $GITHUB_ENV
 
       - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: VirtualSIM-APK-${{ github.run_number }}
-          path: app/build/outputs/apk/debug/VirtualSIM-debug-${{ github.run_number }}.apk
+          path: VirtualSIM-debug-${{ github.run_number }}.apk
           retention-days: 90
 
       - name: Create GitHub Release
@@ -82,21 +80,20 @@ jobs:
 
             ### התקנה:
             1. הורד את הקובץ `VirtualSIM-debug-${{ github.run_number }}.apk`
-            2. פתח את הקובץ בטלפון (אפשר `sideload` מ-Termux: `adb install *.apk`)
-            3. אשר התקנה ממקורות לא ידועים
+            2. פתח בטלפון → אשר התקנה ממקורות לא ידועים
 
             ### שימוש:
-            - **שאיבה**: חבר WiFi → לחץ "שאב אינטרנט מה-WiFi" → המתן עד שיסתיים
-            - **Virtual SIM**: כבה WiFi/סלולרי → לחץ "הפעל Virtual SIM" → גלוש רגיל מהמטמון
+            - **שאיבה**: חבר WiFi → לחץ "התחל שאיבה" → המתן עד שיסתיים
+            - **Virtual SIM**: לחץ "הפעל Virtual SIM" → גלוש ממטמון
 
-            ### מה עובד:
-            - כל האפליקציות שמשתמשות בחיבור רגיל (גוגל מפות, חדשות, ויקיפדיה...)
-            - DNS offline — הטלפון מוצא כתובות גם בלי אינטרנט
-            - HTTPS מלא עם זיהוי אוטומטי של Certificate Pinning
-            - TCP relay לאפליקציות שעוקפות את ה-Proxy
+            ### מה כלול:
+            - Flutter UI — עיצוב כהה מקצועי, תמיכת כל שפות המכשיר
+            - סוכן AI עם Claude Haiku (דורש API Key בהגדרות)
+            - VPN proxy עם MITM HTTPS + TUN packet processing
+            - מטמון חכם 500MB+, DNS offline
 
             > **commit:** ${{ github.sha }}
-          files: app/build/outputs/apk/debug/VirtualSIM-debug-${{ github.run_number }}.apk
+          files: VirtualSIM-debug-${{ github.run_number }}.apk
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           prerelease: false

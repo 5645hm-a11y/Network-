@@ -1,5 +1,6 @@
-# Local SDK path (נוצר אוטומטית ע"י Android Studio / CI)
+# Local SDK / Flutter SDK paths
 local.properties
+android/local.properties
 
 # Build outputs
 **/build/
@@ -12,12 +13,18 @@ gradle-app.setting
 !gradle-wrapper.jar
 !gradle-wrapper.properties
 
+# Flutter generated
+.dart_tool/
+.packages
+pubspec.lock
+lib/l10n/app_localizations*.dart
+
 # IDE
 .idea/
 *.iml
 *.iws
 .DS_Store
 
-# Keystore (לעולם לא ל-git!)
+# Keystore
 *.jks
 *.keystore
