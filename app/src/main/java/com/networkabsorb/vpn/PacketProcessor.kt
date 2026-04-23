@@ -502,9 +502,9 @@ class TunForwarder(
         buf[off + 3] = (v         ).toByte()
     }
 
-    private fun sessionKey(srcIp: ByteArray, srcPort: Int, dstIp: ByteArray, dstPort: Int) =
-        "${srcIp[0] and 0xFF.toByte()}.${srcIp[1] and 0xFF.toByte()}." +
-        "${srcIp[2] and 0xFF.toByte()}.${srcIp[3] and 0xFF.toByte()}:$srcPort-" +
-        "${dstIp[0] and 0xFF.toByte()}.${dstIp[1] and 0xFF.toByte()}." +
-        "${dstIp[2] and 0xFF.toByte()}.${dstIp[3] and 0xFF.toByte()}:$dstPort"
+    private fun sessionKey(srcIp: ByteArray, srcPort: Int, dstIp: ByteArray, dstPort: Int): String {
+        val s = InetAddress.getByAddress(srcIp).hostAddress
+        val d = InetAddress.getByAddress(dstIp).hostAddress
+        return "$s:$srcPort-$d:$dstPort"
+    }
 }
