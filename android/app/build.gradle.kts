@@ -1,32 +1,22 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.ksp)
+    id("com.android.application")
+    id("kotlin-android")
+    id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.dagger.hilt.android")
+    id("com.google.devtools.ksp")
 }
 
 android {
     namespace = "com.networkabsorb"
-    compileSdk = 34
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
 
     defaultConfig {
         applicationId = "com.networkabsorb"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0-poc"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        debug {
-            isDebuggable = true
-        }
-        release {
-            isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-        }
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
     }
 
     compileOptions {
@@ -38,48 +28,54 @@ android {
         jvmTarget = "17"
     }
 
-    buildFeatures {
-        compose = true
+    buildTypes {
+        debug {
+            isDebuggable = true
+        }
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            // BouncyCastle has duplicate signatures
             excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
 }
 
+flutter {
+    source = "../.."
+}
+
+val roomVersion = "2.6.1"
+val hiltVersion = "2.51.1"
+val okHttpVersion = "4.12.0"
+val bcVersion = "1.78.1"
+
 dependencies {
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.activity.compose)
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
 
-    val composeBom = platform(libs.androidx.compose.bom)
-    implementation(composeBom)
-    implementation(libs.androidx.ui)
-    implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
-    implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
-    implementation(libs.androidx.navigation.compose)
-    debugImplementation(libs.androidx.ui.tooling)
+    // Room
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
+    // Hilt
+    implementation("com.google.dagger:hilt-android:$hiltVersion")
+    ksp("com.google.dagger:hilt-compiler:$hiltVersion")
 
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-    implementation(libs.hilt.navigation.compose)
+    // Network
+    implementation("com.squareup.okhttp3:okhttp:$okHttpVersion")
+    implementation("com.squareup.okhttp3:logging-interceptor:$okHttpVersion")
 
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
+    // BouncyCastle
+    implementation("org.bouncycastle:bcpkix-jdk18on:$bcVersion")
+    implementation("org.bouncycastle:bcprov-jdk18on:$bcVersion")
 
-    implementation(libs.bouncycastle.pkix)
-    implementation(libs.bouncycastle.prov)
-
-    implementation(libs.kotlinx.coroutines.android)
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

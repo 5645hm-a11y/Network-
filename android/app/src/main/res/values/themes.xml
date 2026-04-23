@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.NetworkAbsorb" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Flutter launch theme — shown while Flutter engine loads -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+    <!-- Normal theme applied once Flutter is ready -->
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+    <!-- Keep old name for any remaining references -->
+    <style name="Theme.NetworkAbsorb" parent="@android:style/Theme.Black.NoTitleBar" />
 </resources>
