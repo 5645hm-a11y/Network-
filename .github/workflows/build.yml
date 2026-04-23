@@ -9,6 +9,8 @@ jobs:
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create GitHub Releases
 
     steps:
       - name: Checkout repository
