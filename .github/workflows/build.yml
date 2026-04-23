@@ -1,10 +1,8 @@
-name: Build APK
+name: Build & Release APK
 
 on:
   push:
-    branches: [ "**" ]
-  pull_request:
-    branches: [ "**" ]
+    branches: ["**"]
   workflow_dispatch:
 
 jobs:
@@ -23,7 +21,7 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Cache Gradle packages
+      - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
@@ -36,8 +34,6 @@ jobs:
       - name: Set up Android SDK
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          echo "ANDROID_HOME = $ANDROID_HOME"
-          # Install platform-34 and build-tools-34 if not already present
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platforms;android-34" \
             "build-tools;34.0.0" \
@@ -47,29 +43,58 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log
-          exit ${PIPESTATUS[0]}
+        run: ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
 
-      - name: Show build errors on failure
+      - name: Show errors on failure
         if: failure()
         run: |
-          echo "=== LAST 150 LINES OF BUILD LOG ==="
-          tail -150 /tmp/build.log
-          echo "=== ERROR LINES ==="
-          grep -n "error:" /tmp/build.log | head -30 || true
-          grep -n "^e: " /tmp/build.log | head -30 || true
+          echo "=== BUILD ERRORS ==="
+          grep -n "error:\|^e: " /tmp/build.log | head -50 || true
+          echo "=== LAST 100 LINES ==="
+          tail -100 /tmp/build.log
 
-      - name: Upload Debug APK
+      - name: Rename APK
+        if: success()
+        run: |
+          cd app/build/outputs/apk/debug/
+          mv *.apk VirtualSIM-debug-${{ github.run_number }}.apk
+          echo "APK_PATH=$(pwd)/VirtualSIM-debug-${{ github.run_number }}.apk" >> $GITHUB_ENV
+          ls -lh
+
+      - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: NetworkAbsorb-debug-${{ github.run_number }}
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 30
+          name: VirtualSIM-APK-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/VirtualSIM-debug-${{ github.run_number }}.apk
+          retention-days: 90
 
-      - name: Show APK info
+      - name: Create GitHub Release
         if: success()
-        run: |
-          echo "APK built successfully!"
-          ls -lh app/build/outputs/apk/debug/
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "Virtual SIM — Build ${{ github.run_number }}"
+          body: |
+            ## Virtual SIM APK — Build ${{ github.run_number }}
+
+            ### התקנה:
+            1. הורד את הקובץ `VirtualSIM-debug-${{ github.run_number }}.apk`
+            2. פתח את הקובץ בטלפון (אפשר `sideload` מ-Termux: `adb install *.apk`)
+            3. אשר התקנה ממקורות לא ידועים
+
+            ### שימוש:
+            - **שאיבה**: חבר WiFi → לחץ "שאב אינטרנט מה-WiFi" → המתן עד שיסתיים
+            - **Virtual SIM**: כבה WiFi/סלולרי → לחץ "הפעל Virtual SIM" → גלוש רגיל מהמטמון
+
+            ### מה עובד:
+            - כל האפליקציות שמשתמשות בחיבור רגיל (גוגל מפות, חדשות, ויקיפדיה...)
+            - DNS offline — הטלפון מוצא כתובות גם בלי אינטרנט
+            - HTTPS מלא עם זיהוי אוטומטי של Certificate Pinning
+            - TCP relay לאפליקציות שעוקפות את ה-Proxy
+
+            > **commit:** ${{ github.sha }}
+          files: app/build/outputs/apk/debug/VirtualSIM-debug-${{ github.run_number }}.apk
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false
