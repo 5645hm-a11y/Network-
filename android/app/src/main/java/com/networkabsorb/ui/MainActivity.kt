@@ -12,7 +12,7 @@ import com.networkabsorb.security.CertificateManager
 import com.networkabsorb.vpn.InternetExtractorVpnService
 import com.networkabsorb.vpn.InternetExtractorVpnService.Companion.EXTRA_QUOTA_MB
 import dagger.hilt.android.AndroidEntryPoint
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
 
     @Inject lateinit var cacheEngine: CacheEngine
     @Inject lateinit var trafficLogger: TrafficLogger
