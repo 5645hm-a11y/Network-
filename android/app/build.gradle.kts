@@ -58,6 +58,24 @@ flutter {
     source = "../.."
 }
 
+// AGP 8.x removed the ability to redirect variant output directories via the
+// variant API, so Flutter's CLI can't find the APK at its expected location.
+// This hook copies it there after each package task so `flutter build apk` succeeds.
+tasks.configureEach {
+    if (name.startsWith("package") && (name.endsWith("Debug") || name.endsWith("Release"))) {
+        doLast {
+            val variantName = name.removePrefix("package").lowercase()
+            val flutterApkDir = rootProject.projectDir.parentFile
+                .resolve("build/app/outputs/flutter-apk")
+            flutterApkDir.mkdirs()
+            layout.buildDirectory.dir("outputs/apk/$variantName").get().asFile
+                .listFiles()
+                ?.filter { it.extension == "apk" }
+                ?.forEach { apk -> apk.copyTo(flutterApkDir.resolve(apk.name), overwrite = true) }
+        }
+    }
+}
+
 val roomVersion = "2.6.1"
 val hiltVersion = "2.51.1"
 val okHttpVersion = "4.12.0"
