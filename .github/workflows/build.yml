@@ -43,15 +43,20 @@ jobs:
         run: flutter gen-l10n
 
       - name: Build Debug APK
-        run: flutter build apk --debug 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
+        run: flutter build apk --debug --verbose 2>&1 | tee /tmp/build.log; exit ${PIPESTATUS[0]}
 
       - name: Show errors on failure
         if: failure()
         run: |
-          echo "=== BUILD ERRORS ==="
-          grep -iE "error:|^e: " /tmp/build.log | head -60 || true
-          echo "=== LAST 100 LINES ==="
-          tail -100 /tmp/build.log
+          echo "=== BUILD ERRORS (error/exception/FAILED) ==="
+          grep -iE "(error:|^e: |exception|build failed|task.*failed)" /tmp/build.log | grep -v "^\[" | head -80 || true
+          echo ""
+          echo "=== LAST 150 LINES OF BUILD LOG ==="
+          tail -150 /tmp/build.log
+          echo ""
+          echo "=== GRADLE REPORT (if any) ==="
+          find /home/runner/work -name "*.txt" -path "*/reports/*" 2>/dev/null | head -5 | xargs cat 2>/dev/null || true
+          find . -name "*.txt" -path "*/reports/*" 2>/dev/null | head -5 | xargs cat 2>/dev/null || true
 
       - name: Rename APK
         if: success()
