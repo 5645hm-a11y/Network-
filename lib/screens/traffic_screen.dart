@@ -15,7 +15,9 @@ class TrafficScreen extends StatelessWidget {
     final l       = AppLocalizations.of(context)!;
     final traffic = context.watch<VpnProvider>().traffic;
 
-    return Container(
+    return Material(
+      color: Colors.transparent,
+      child: Container(
       decoration: BoxDecoration(gradient: bgGradient),
       child: SafeArea(
         child: Column(
@@ -35,7 +37,7 @@ class TrafficScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

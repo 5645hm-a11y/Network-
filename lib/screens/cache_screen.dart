@@ -34,7 +34,9 @@ class _CacheScreenState extends State<CacheScreen> {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
 
-    return Container(
+    return Material(
+      color: Colors.transparent,
+      child: Container(
       decoration: BoxDecoration(gradient: bgGradient),
       child: SafeArea(
         child: Column(
@@ -84,7 +86,7 @@ class _CacheScreenState extends State<CacheScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

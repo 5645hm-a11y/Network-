@@ -40,7 +40,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l = AppLocalizations.of(context)!;
     final s = context.watch<VpnProvider>().state;
 
-    return Container(
+    return Material(
+      color: Colors.transparent,
+      child: Container(
       decoration: BoxDecoration(gradient: bgGradient),
       child: SafeArea(
         child: Column(
@@ -71,7 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 
   Widget _header(AppLocalizations l) => Padding(
