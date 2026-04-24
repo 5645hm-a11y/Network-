@@ -18,16 +18,13 @@ class _CacheScreenState extends State<CacheScreen> {
   bool _loading = true;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final entries = await _svc.getCacheEntries();
-      if (mounted) setState(() { _entries = entries; _loading = false; });
+      final e = await _svc.getCacheEntries();
+      if (mounted) setState(() { _entries = e; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -37,35 +34,49 @@ class _CacheScreenState extends State<CacheScreen> {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
 
-    return Scaffold(
-      backgroundColor: bgDeep,
-      body: SafeArea(
+    return Container(
+      decoration: BoxDecoration(gradient: bgGradient),
+      child: SafeArea(
         child: Column(
           children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: textPrim),
-                  onPressed: widget.onBack,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: Row(children: [
+                GestureDetector(
+                  onTap: widget.onBack,
+                  behavior: HitTestBehavior.opaque,
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(Icons.arrow_back_ios_new_rounded,
+                        color: cTextPrim, size: 20),
+                  ),
                 ),
+                const SizedBox(width: 4),
                 Text(l.cacheBrowser,
                     style: const TextStyle(
-                        color: textPrim, fontSize: 20, fontWeight: FontWeight.bold)),
+                        color: cTextPrim, fontSize: 19, fontWeight: FontWeight.w700)),
                 const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded, color: textSec),
-                  onPressed: _load,
+                GestureDetector(
+                  onTap: _load,
+                  behavior: HitTestBehavior.opaque,
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(Icons.refresh_rounded, color: cTextSec, size: 22),
+                  ),
                 ),
-              ],
+              ]),
             ),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: electric))
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                          color: cElectric, strokeWidth: 1.5))
                   : _entries.isEmpty
                       ? Center(child: Text(l.noCacheEntries,
-                          style: const TextStyle(color: textSec)))
+                          style: const TextStyle(color: cTextSec, fontSize: 14)))
                       : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                           itemCount: _entries.length,
                           itemBuilder: (_, i) => _CacheTile(entry: _entries[i]),
                         ),
@@ -83,59 +94,54 @@ class _CacheTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isOk = entry.statusCode < 400;
     final host = Uri.tryParse(entry.url)?.host ?? entry.url;
-    final sizeStr = _fmtSize(entry.sizeBytes);
+    final ok   = entry.statusCode < 400;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 3),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: bgCard,
+        color: cSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF1A2A40)),
+        border: Border.all(color: cBorder),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-              color: electric.withAlpha(20),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.insert_drive_file_rounded, color: electric, size: 18),
+      child: Row(children: [
+        Container(
+          width: 34, height: 34,
+          decoration: BoxDecoration(
+            color: cElectric.withAlpha(18),
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(host,
-                    style: const TextStyle(color: textPrim, fontSize: 13),
-                    overflow: TextOverflow.ellipsis),
-                Text(entry.contentType,
-                    style: const TextStyle(color: textSec, fontSize: 11),
-                    overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(sizeStr, style: const TextStyle(color: mint, fontSize: 12)),
-              Text('${entry.statusCode}',
-                  style: TextStyle(
-                      color: isOk ? mint : redStop, fontSize: 11)),
-            ],
-          ),
-        ],
-      ),
+          child: const Icon(Icons.insert_drive_file_rounded,
+              color: cElectric, size: 16),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(host,
+                style: const TextStyle(color: cTextPrim, fontSize: 12.5),
+                overflow: TextOverflow.ellipsis),
+            Text(entry.contentType,
+                style: const TextStyle(color: cTextSec, fontSize: 10.5),
+                overflow: TextOverflow.ellipsis),
+          ],
+        )),
+        const SizedBox(width: 8),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text(_fmtB(entry.sizeBytes),
+              style: const TextStyle(color: cMint, fontSize: 11)),
+          Text('${entry.statusCode}',
+              style: TextStyle(
+                  color: ok ? cMint : cRed, fontSize: 10.5)),
+        ]),
+      ]),
     );
   }
 
-  String _fmtSize(int bytes) {
-    if (bytes >= 1024 * 1024) return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
-    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
-    return '$bytes B';
+  String _fmtB(int b) {
+    if (b >= 1048576) return '${(b / 1048576).toStringAsFixed(1)} MB';
+    if (b >= 1024)    return '${(b / 1024).toStringAsFixed(0)} KB';
+    return '$b B';
   }
 }

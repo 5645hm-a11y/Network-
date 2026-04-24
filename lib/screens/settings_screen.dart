@@ -5,6 +5,7 @@ import '../models/vpn_state.dart';
 import '../providers/vpn_provider.dart';
 import '../services/vpn_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ui_kit.dart';
 
 class SettingsScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -15,31 +16,23 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _apiKeyController = TextEditingController();
-  bool _keyVisible = false;
-  bool _keySaved = false;
-  final _svc = VpnService();
+  final _ctrl = TextEditingController();
+  final _svc  = VpnService();
+  bool _visible = false;
+  bool _saved   = false;
 
   @override
   void initState() {
     super.initState();
-    _loadKey();
-  }
-
-  Future<void> _loadKey() async {
-    final key = await _svc.getApiKey();
-    if (mounted) _apiKeyController.text = key;
-  }
-
-  Future<void> _saveKey() async {
-    await _svc.setApiKey(_apiKeyController.text.trim());
-    if (mounted) setState(() => _keySaved = true);
+    _svc.getApiKey().then((k) { if (mounted) _ctrl.text = k; });
   }
 
   @override
-  void dispose() {
-    _apiKeyController.dispose();
-    super.dispose();
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  Future<void> _save() async {
+    await _svc.setApiKey(_ctrl.text.trim());
+    if (mounted) setState(() => _saved = true);
   }
 
   @override
@@ -47,31 +40,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final l = AppLocalizations.of(context)!;
     final s = context.watch<VpnProvider>().state;
 
-    return Scaffold(
-      backgroundColor: bgDeep,
-      body: SafeArea(
+    return Container(
+      decoration: BoxDecoration(gradient: bgGradient),
+      child: SafeArea(
         child: Column(
           children: [
-            _topBar(l),
+            _header(l),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 8),
-                    _sectionLabel(l.agentPanel, violetAI),
-                    _aiCard(l, s),
-                    const SizedBox(height: 16),
-                    _sectionLabel(l.security, electric),
-                    _certCard(l, s),
-                    const SizedBox(height: 16),
-                    _sectionLabel(l.cacheSection, mint),
-                    _cacheCard(l, s),
-                    const SizedBox(height: 16),
-                    _sectionLabel(l.about, textSec),
-                    _aboutCard(l),
-                    const SizedBox(height: 32),
+                    SectionLabel(l.agentPanel, color: cViolet),
+                    _aiSection(l, s),
+                    const SizedBox(height: 20),
+                    SectionLabel(l.security, color: cElectric),
+                    _certSection(l, s),
+                    const SizedBox(height: 20),
+                    SectionLabel(l.cacheSection, color: cMint),
+                    _cacheSection(l, s),
+                    const SizedBox(height: 20),
+                    SectionLabel(l.about, color: cTextSec),
+                    _aboutSection(l),
                   ],
                 ),
               ),
@@ -82,261 +74,237 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _topBar(AppLocalizations l) => Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: textPrim),
-            onPressed: widget.onBack,
-          ),
-          Text(l.settings,
-              style: const TextStyle(
-                  color: textPrim, fontSize: 20, fontWeight: FontWeight.bold)),
-        ],
-      );
-
-  Widget _sectionLabel(String text, Color color) => Padding(
-        padding: const EdgeInsets.only(bottom: 8, left: 2),
-        child: Text(
-          text.toUpperCase(),
-          style: TextStyle(
-              color: color, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
+  Widget _header(AppLocalizations l) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: widget.onBack,
+              behavior: HitTestBehavior.opaque,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.arrow_back_ios_new_rounded, color: cTextPrim, size: 20),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(l.settings,
+                style: const TextStyle(
+                    color: cTextPrim, fontSize: 20, fontWeight: FontWeight.w700)),
+          ],
         ),
       );
 
-  Widget _aiCard(AppLocalizations l, VpnState s) {
-    return _DarkCard(
-      borderColor: violetAI.withAlpha(60),
-      gradient: [const Color(0xFF1A1040), bgCard],
+  Widget _aiSection(AppLocalizations l, VpnState s) {
+    return GlassPanel(
+      glowColor: cViolet,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.psychology_rounded, color: violetAI, size: 22),
+          Row(children: [
+            const Icon(Icons.psychology_rounded, color: cViolet, size: 20),
+            const SizedBox(width: 10),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(l.apiKeyLabel,
+                  style: const TextStyle(color: cTextPrim, fontWeight: FontWeight.w600, fontSize: 14)),
+              const Text('Claude Haiku',
+                  style: TextStyle(color: cTextSec, fontSize: 11)),
+            ]),
+          ]),
+          const SizedBox(height: 14),
+          _KeyField(
+            ctrl: _ctrl,
+            visible: _visible,
+            onToggle: () => setState(() => _visible = !_visible),
+            onChanged: (_) => setState(() => _saved = false),
+            hint: l.apiKeyHint,
+          ),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: NeonButton(
+                label: _saved ? l.saved : l.saveKey,
+                icon: _saved ? Icons.check_rounded : Icons.save_rounded,
+                color: cViolet,
+                onTap: _save,
+                height: 44,
+              ),
+            ),
+            if (_ctrl.text.isNotEmpty) ...[
               const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(l.apiKeyLabel,
-                      style: const TextStyle(
-                          color: textPrim, fontWeight: FontWeight.w600, fontSize: 15)),
-                  Text('Claude Haiku AI',
-                      style: const TextStyle(color: textSec, fontSize: 12)),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _apiKeyController,
-            obscureText: !_keyVisible,
-            style: const TextStyle(color: textPrim, fontSize: 13),
-            onChanged: (_) => setState(() => _keySaved = false),
-            decoration: InputDecoration(
-              hintText: l.apiKeyHint,
-              suffixIcon: IconButton(
-                icon: Icon(
-                    _keyVisible ? Icons.visibility_off : Icons.visibility,
-                    color: textSec, size: 20),
-                onPressed: () => setState(() => _keyVisible = !_keyVisible),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: violetAI,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              GestureDetector(
+                onTap: () {
+                  _ctrl.clear();
+                  _svc.setApiKey('');
+                  setState(() => _saved = false);
+                },
+                child: Container(
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: cSurface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: cBorder),
                   ),
-                  onPressed: _saveKey,
-                  icon: Icon(_keySaved ? Icons.check : Icons.save_rounded, size: 16),
-                  label: Text(_keySaved ? l.saved : l.saveKey),
+                  child: const Center(
+                    child: Text('✕', style: TextStyle(color: cTextSec, fontSize: 16)),
+                  ),
                 ),
-              ),
-              if (_apiKeyController.text.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () {
-                    _apiKeyController.clear();
-                    _svc.setApiKey('');
-                    setState(() => _keySaved = false);
-                  },
-                  child: Text(l.delete, style: const TextStyle(color: textSec)),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Container(
-                width: 8, height: 8,
-                decoration: BoxDecoration(
-                  color: s.agentHasKey ? mint : amber,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                s.agentHasKey ? l.agentActive : l.agentInactive,
-                style: TextStyle(
-                    color: s.agentHasKey ? mint : amber, fontSize: 12),
               ),
             ],
-          ),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            PulsingDot(color: s.agentHasKey ? cMint : cAmber, size: 7),
+            const SizedBox(width: 8),
+            Text(
+              s.agentHasKey ? l.agentActive : l.agentInactive,
+              style: TextStyle(
+                  color: s.agentHasKey ? cMint : cAmber, fontSize: 11.5),
+            ),
+          ]),
         ],
       ),
     );
   }
 
-  Widget _certCard(AppLocalizations l, VpnState s) {
-    return _DarkCard(
-      child: Row(
-        children: [
-          Icon(Icons.security_rounded, color: electric, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(l.caCert,
-                    style: const TextStyle(
-                        color: textPrim, fontWeight: FontWeight.w600, fontSize: 15)),
-                Text(s.caCertReady ? l.caCertReady : l.caCertSubtitle,
-                    style: TextStyle(
-                        color: s.caCertReady ? mint : textSec, fontSize: 12)),
-              ],
-            ),
+  Widget _certSection(AppLocalizations l, VpnState s) {
+    return GlassPanel(
+      child: Row(children: [
+        const Icon(Icons.security_rounded, color: cElectric, size: 22),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(l.caCert,
+              style: const TextStyle(color: cTextPrim, fontWeight: FontWeight.w600, fontSize: 14)),
+          Text(s.caCertReady ? l.caCertReady : l.caCertSubtitle,
+              style: TextStyle(color: s.caCertReady ? cMint : cTextSec, fontSize: 11.5)),
+        ])),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 88,
+          child: NeonButton(
+            label: s.caCertReady ? l.installed : l.install,
+            color: s.caCertReady ? cMint : cElectric,
+            onTap: () => _svc.installCaCert(),
+            outlined: s.caCertReady,
+            height: 40,
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: s.caCertReady ? bgSurface : electric,
-              foregroundColor: s.caCertReady ? mint : bgDeep,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            ),
-            onPressed: () => _svc.installCaCert(),
-            child: Text(s.caCertReady ? l.installed : l.install,
-                style: const TextStyle(fontSize: 13)),
-          ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 
-  Widget _cacheCard(AppLocalizations l, VpnState s) {
-    return _DarkCard(
+  Widget _cacheSection(AppLocalizations l, VpnState s) {
+    return GlassPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.storage_rounded, color: mint, size: 24),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(l.cacheStats,
-                      style: const TextStyle(
-                          color: textPrim, fontWeight: FontWeight.w600, fontSize: 15)),
-                  Text(
-                      '${s.cacheEntryCount} ${l.entries} · ${s.cacheSizeMb.toStringAsFixed(1)} MB',
-                      style: const TextStyle(color: textSec, fontSize: 12)),
-                ],
+          Row(children: [
+            const Icon(Icons.storage_rounded, color: cMint, size: 22),
+            const SizedBox(width: 12),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(l.cacheStats,
+                  style: const TextStyle(color: cTextPrim, fontWeight: FontWeight.w600, fontSize: 14)),
+              Text('${s.cacheEntryCount} ${l.entries} · ${s.cacheSizeMb.toStringAsFixed(1)} MB',
+                  style: const TextStyle(color: cTextSec, fontSize: 11.5)),
+            ]),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(
+              child: NeonButton(
+                label: l.purgeExpired, color: cElectric,
+                onTap: () => _svc.purgeExpired(),
+                outlined: true, height: 42,
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: electric,
-                    side: BorderSide(color: electric.withAlpha(120)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                  ),
-                  onPressed: () => _svc.purgeExpired(),
-                  child: Text(l.purgeExpired, style: const TextStyle(fontSize: 13)),
-                ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: NeonButton(
+                label: l.clearAll, color: cRed,
+                onTap: () => _svc.clearCache(),
+                outlined: true, height: 42,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3D1515),
-                    foregroundColor: const Color(0xFFFF6B6B),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                  ),
-                  onPressed: () => _svc.clearCache(),
-                  child: Text(l.clearAll, style: const TextStyle(fontSize: 13)),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ]),
         ],
       ),
     );
   }
 
-  Widget _aboutCard(AppLocalizations l) {
-    return _DarkCard(
-      child: Row(
-        children: [
-          const Icon(Icons.info_outline_rounded, color: textSec, size: 24),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Virtual SIM',
-                  style: const TextStyle(
-                      color: textPrim, fontWeight: FontWeight.bold, fontSize: 16)),
-              Text(l.version,
-                  style: const TextStyle(color: textSec, fontSize: 12)),
-              Text(l.description,
-                  style: const TextStyle(color: textSec, fontSize: 12)),
-              Text(l.managedByAI,
-                  style: const TextStyle(color: violetAI, fontSize: 12)),
-            ],
+  Widget _aboutSection(AppLocalizations l) {
+    return GlassPanel(
+      child: Row(children: [
+        Container(
+          width: 44, height: 44,
+          decoration: BoxDecoration(
+            color: cViolet.withAlpha(20),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: cViolet.withAlpha(60)),
           ),
-        ],
-      ),
+          child: const Icon(Icons.sim_card_rounded, color: cViolet, size: 22),
+        ),
+        const SizedBox(width: 14),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Virtual SIM',
+              style: TextStyle(color: cTextPrim, fontWeight: FontWeight.w700, fontSize: 15)),
+          Text(l.version, style: const TextStyle(color: cTextSec, fontSize: 11.5)),
+          Text(l.managedByAI, style: const TextStyle(color: cViolet, fontSize: 11.5)),
+        ]),
+      ]),
     );
   }
 }
 
-class _DarkCard extends StatelessWidget {
-  final Widget child;
-  final Color? borderColor;
-  final List<Color>? gradient;
+class _KeyField extends StatelessWidget {
+  final TextEditingController ctrl;
+  final bool visible;
+  final VoidCallback onToggle;
+  final ValueChanged<String> onChanged;
+  final String hint;
 
-  const _DarkCard({required this.child, this.borderColor, this.gradient});
+  const _KeyField({
+    required this.ctrl,
+    required this.visible,
+    required this.onToggle,
+    required this.onChanged,
+    required this.hint,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 0),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: gradient == null ? bgCard : null,
-        gradient: gradient != null
-            ? LinearGradient(
-                colors: gradient!,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : null,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor ?? const Color(0xFF1A2A40)),
+        color: const Color(0xFF080D18),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cBorder),
       ),
-      child: child,
+      child: Row(children: [
+        Expanded(
+          child: TextField(
+            controller: ctrl,
+            obscureText: !visible,
+            onChanged: onChanged,
+            style: const TextStyle(color: cTextPrim, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(color: cTextSec),
+              border: InputBorder.none,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            ),
+          ),
+        ),
+        GestureDetector(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Icon(
+              visible ? Icons.visibility_off : Icons.visibility,
+              color: cTextSec, size: 18,
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }

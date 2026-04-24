@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/vpn_state.dart';
 import '../providers/vpn_provider.dart';
 import '../theme/app_theme.dart';
+import '../widgets/ui_kit.dart';
 
 class TrafficScreen extends StatelessWidget {
   final VoidCallback onBack;
@@ -11,33 +12,24 @@ class TrafficScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context)!;
+    final l       = AppLocalizations.of(context)!;
     final traffic = context.watch<VpnProvider>().traffic;
 
-    return Scaffold(
-      backgroundColor: bgDeep,
-      body: SafeArea(
+    return Container(
+      decoration: BoxDecoration(gradient: bgGradient),
+      child: SafeArea(
         child: Column(
           children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: textPrim),
-                  onPressed: onBack,
-                ),
-                Text(l.trafficMonitor,
-                    style: const TextStyle(
-                        color: textPrim, fontSize: 20, fontWeight: FontWeight.bold)),
-              ],
-            ),
+            _Header(title: l.trafficMonitor, onBack: onBack),
             Expanded(
               child: traffic.isEmpty
                   ? Center(child: Text(l.noTraffic,
-                      style: const TextStyle(color: textSec)))
+                      style: const TextStyle(color: cTextSec, fontSize: 14)))
                   : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                       itemCount: traffic.length,
-                      itemBuilder: (_, i) => _TrafficTile(event: traffic[i]),
+                      itemBuilder: (_, i) => _TrafficRow(event: traffic[i]),
                     ),
             ),
           ],
@@ -47,55 +39,81 @@ class TrafficScreen extends StatelessWidget {
   }
 }
 
-class _TrafficTile extends StatelessWidget {
+class _TrafficRow extends StatelessWidget {
   final TrafficEvent event;
-  const _TrafficTile({required this.event});
+  const _TrafficRow({required this.event});
 
   @override
   Widget build(BuildContext context) {
-    final isHit = event.type == 'hit';
+    final isHit  = event.type == 'hit';
     final isMiss = event.type == 'miss';
-    final color = isHit ? mint : isMiss ? amber : electric;
-    final icon = isHit ? Icons.offline_bolt_rounded
-        : isMiss ? Icons.cloud_off_rounded
-        : Icons.download_rounded;
+    final color  = isHit ? cMint : isMiss ? cAmber : cElectric;
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 3),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: bgCard,
+        color: cSurface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF1A2A40)),
+        border: Border.all(color: cBorder),
       ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              Uri.tryParse(event.url)?.host ?? event.url,
-              style: const TextStyle(color: textPrim, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
-            ),
+      child: Row(children: [
+        Container(
+          width: 6, height: 6, margin: const EdgeInsets.only(right: 10),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        Expanded(
+          child: Text(
+            Uri.tryParse(event.url)?.host ?? event.url,
+            style: const TextStyle(color: cTextPrim, fontSize: 11.5),
+            overflow: TextOverflow.ellipsis,
           ),
-          if (event.statusCode != null)
-            Text('${event.statusCode}',
-                style: TextStyle(
-                    color: (event.statusCode ?? 0) < 400 ? mint : redStop,
-                    fontSize: 11)),
+        ),
+        if (event.statusCode != null) ...[
           const SizedBox(width: 6),
-          if (event.sizeBytes != null)
-            Text(_fmtSize(event.sizeBytes!),
-                style: const TextStyle(color: textSec, fontSize: 11)),
+          Text('${event.statusCode}',
+              style: TextStyle(
+                  color: (event.statusCode ?? 0) < 400 ? cMint : cRed,
+                  fontSize: 10.5)),
         ],
-      ),
+        if (event.sizeBytes != null) ...[
+          const SizedBox(width: 6),
+          Text(_fmtB(event.sizeBytes!),
+              style: const TextStyle(color: cTextSec, fontSize: 10.5)),
+        ],
+      ]),
     );
   }
 
-  String _fmtSize(int bytes) {
-    if (bytes >= 1024 * 1024) return '${(bytes / 1024 / 1024).toStringAsFixed(1)}MB';
-    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(0)}KB';
-    return '${bytes}B';
+  String _fmtB(int b) {
+    if (b >= 1048576) return '${(b / 1048576).toStringAsFixed(1)}M';
+    if (b >= 1024)    return '${(b / 1024).toStringAsFixed(0)}K';
+    return '${b}B';
   }
+}
+
+class _Header extends StatelessWidget {
+  final String title;
+  final VoidCallback onBack;
+  const _Header({required this.title, required this.onBack});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        child: Row(children: [
+          GestureDetector(
+            onTap: onBack,
+            behavior: HitTestBehavior.opaque,
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Icon(Icons.arrow_back_ios_new_rounded,
+                  color: cTextPrim, size: 20),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(title,
+              style: const TextStyle(
+                  color: cTextPrim, fontSize: 19, fontWeight: FontWeight.w700)),
+        ]),
+      );
 }

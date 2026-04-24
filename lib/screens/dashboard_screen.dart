@@ -1,10 +1,11 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import '../models/vpn_state.dart';
 import '../providers/vpn_provider.dart';
 import '../theme/app_theme.dart';
-import '../widgets/arc_progress.dart';
+import '../widgets/ui_kit.dart';
 
 class DashboardScreen extends StatefulWidget {
   final VoidCallback onTraffic;
@@ -27,43 +28,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context)!;
+    final l  = AppLocalizations.of(context)!;
     final vp = context.watch<VpnProvider>();
-    final s = vp.state;
+    final s  = vp.state;
 
-    return Scaffold(
-      backgroundColor: bgDeep,
-      body: Stack(
+    return Container(
+      decoration: BoxDecoration(gradient: bgGradient),
+      child: Stack(
         children: [
-          _buildBackground(),
+          // Ambient orbs
+          _Orbs(running: s.running, mode: s.mode),
+
           SafeArea(
             child: Column(
               children: [
-                _buildTopBar(context, l, s),
+                _TopBar(
+                  state: s,
+                  onTraffic: widget.onTraffic,
+                  onCache: widget.onCache,
+                  onSettings: widget.onSettings,
+                  l: l,
+                ),
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                     child: Column(
                       children: [
-                        const SizedBox(height: 8),
-                        _AiAgentPanel(state: s),
-                        const SizedBox(height: 16),
-                        _MainCard(
-                          state: s,
-                          quotaMb: _quotaMb,
-                          onQuotaChanged: (v) => setState(() => _quotaMb = v),
-                          onAbsorb: () => vp.startAbsorb(_quotaMb),
-                          onServe: () => vp.startServe(),
-                          onStop: () => vp.stop(),
-                          l: l,
+                        _AgentPanel(state: s),
+                        const SizedBox(height: 14),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 500),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          child: !s.running
+                              ? _IdleCard(
+                                  key: const ValueKey('idle'),
+                                  quotaMb: _quotaMb,
+                                  onQuotaChanged: (v) => setState(() => _quotaMb = v),
+                                  onAbsorb: () => vp.startAbsorb(_quotaMb),
+                                  onServe: () => vp.startServe(),
+                                  l: l,
+                                )
+                              : s.mode == VpnMode.absorb
+                                  ? _AbsorbCard(
+                                      key: const ValueKey('absorb'),
+                                      state: s,
+                                      onStop: () => vp.stop(),
+                                      l: l,
+                                    )
+                                  : _ServeCard(
+                                      key: const ValueKey('serve'),
+                                      state: s,
+                                      onStop: () => vp.stop(),
+                                      l: l,
+                                    ),
                         ),
                         if (s.running && s.mode == VpnMode.absorb && s.topDomains.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          _DomainFeed(domains: s.topDomains, l: l),
+                          const SizedBox(height: 14),
+                          _DomainFeed(domains: s.topDomains),
                         ],
-                        const SizedBox(height: 12),
-                        _StatsRow(state: s, l: l),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 14),
+                        _BottomStats(state: s, l: l),
                       ],
                     ),
                   ),
@@ -75,188 +101,178 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
-
-  Widget _buildBackground() {
-    return CustomPaint(
-      painter: _BgPainter(),
-      child: const SizedBox.expand(),
-    );
-  }
-
-  Widget _buildTopBar(BuildContext context, AppLocalizations l, VpnState s) {
-    Color dotColor;
-    if (!s.running) dotColor = textSec;
-    else if (s.mode == VpnMode.absorb) dotColor = mint;
-    else dotColor = cyanSim;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 8, height: 8,
-            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 8),
-          Text(l.appTitle,
-              style: const TextStyle(color: textPrim, fontSize: 18, fontWeight: FontWeight.bold)),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.bar_chart_rounded, color: textSec),
-            onPressed: widget.onTraffic,
-          ),
-          IconButton(
-            icon: const Icon(Icons.storage_rounded, color: textSec),
-            onPressed: widget.onCache,
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_rounded, color: textSec),
-            onPressed: widget.onSettings,
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-class _BgPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height),
-        Paint()..color = bgDeep);
-    canvas.drawCircle(
-      Offset(size.width * 0.8, size.height * 0.1),
-      160,
-      Paint()..color = electric.withAlpha(18),
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.1, size.height * 0.6),
-      120,
-      Paint()..color = violetAI.withAlpha(18),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
-}
-
-// ── AI Agent Panel ─────────────────────────────────────────────────────────────
-class _AiAgentPanel extends StatelessWidget {
-  final VpnState state;
-  const _AiAgentPanel({required this.state});
+// ── Ambient orbs ──────────────────────────────────────────────────────────────
+class _Orbs extends StatelessWidget {
+  final bool running;
+  final VpnMode mode;
+  const _Orbs({required this.running, required this.mode});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E0A1E),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: violetAI.withAlpha(60)),
-      ),
-      child: Row(
-        children: [
-          if (state.agentThinking)
-            const SizedBox(
-              width: 18, height: 18,
-              child: CircularProgressIndicator(
-                color: violetAI, strokeWidth: 2,
-              ),
-            )
-          else
-            const Icon(Icons.psychology_rounded, color: violetAI, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              state.agentMessage.isEmpty ? 'Virtual SIM Agent' : state.agentMessage,
-              style: const TextStyle(color: textPrim, fontSize: 13),
-            ),
-          ),
-          if (!state.agentHasKey)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: amber.withAlpha(30),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: amber.withAlpha(80)),
-              ),
-              child: const Text('API Key', style: TextStyle(color: amber, fontSize: 10)),
-            ),
-        ],
-      ),
+    final c1 = running
+        ? (mode == VpnMode.absorb ? cMint : cCyan)
+        : cElectric;
+    return CustomPaint(
+      painter: _OrbPainter(c1: c1, c2: cViolet),
+      child: const SizedBox.expand(),
     );
   }
 }
 
-// ── Main Card ─────────────────────────────────────────────────────────────────
-class _MainCard extends StatelessWidget {
+class _OrbPainter extends CustomPainter {
+  final Color c1, c2;
+  _OrbPainter({required this.c1, required this.c2});
+
+  @override
+  void paint(Canvas canvas, Size sz) {
+    canvas.drawCircle(
+      Offset(sz.width * 0.85, sz.height * 0.08),
+      sz.width * 0.45,
+      Paint()
+        ..shader = RadialGradient(colors: [c1.withAlpha(25), Colors.transparent])
+            .createShader(Rect.fromCircle(
+                center: Offset(sz.width * 0.85, sz.height * 0.08),
+                radius: sz.width * 0.45)),
+    );
+    canvas.drawCircle(
+      Offset(sz.width * 0.1, sz.height * 0.55),
+      sz.width * 0.35,
+      Paint()
+        ..shader = RadialGradient(colors: [c2.withAlpha(20), Colors.transparent])
+            .createShader(Rect.fromCircle(
+                center: Offset(sz.width * 0.1, sz.height * 0.55),
+                radius: sz.width * 0.35)),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_OrbPainter o) => o.c1 != c1 || o.c2 != c2;
+}
+
+// ── Top Bar ───────────────────────────────────────────────────────────────────
+class _TopBar extends StatelessWidget {
   final VpnState state;
-  final int quotaMb;
-  final ValueChanged<int> onQuotaChanged;
-  final VoidCallback onAbsorb;
-  final VoidCallback onServe;
-  final VoidCallback onStop;
+  final VoidCallback onTraffic, onCache, onSettings;
   final AppLocalizations l;
 
-  const _MainCard({
+  const _TopBar({
     required this.state,
-    required this.quotaMb,
-    required this.onQuotaChanged,
-    required this.onAbsorb,
-    required this.onServe,
-    required this.onStop,
+    required this.onTraffic,
+    required this.onCache,
+    required this.onSettings,
     required this.l,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: bgCard,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF1A2A40)),
-      ),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 400),
-        child: !state.running
-            ? _IdleContent(
-                key: const ValueKey('idle'),
-                quotaMb: quotaMb,
-                onQuotaChanged: onQuotaChanged,
-                onAbsorb: onAbsorb,
-                onServe: onServe,
-                l: l,
-              )
-            : state.mode == VpnMode.absorb
-                ? _AbsorbingContent(
-                    key: const ValueKey('absorb'),
-                    state: state,
-                    onStop: onStop,
-                    l: l,
-                  )
-                : _SimActiveContent(
-                    key: const ValueKey('serve'),
-                    state: state,
-                    onStop: onStop,
-                    l: l,
-                  ),
+    Color dot;
+    if (!state.running) dot = cTextSec;
+    else if (state.mode == VpnMode.absorb) dot = cMint;
+    else dot = cCyan;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          PulsingDot(color: dot, size: 8),
+          const SizedBox(width: 10),
+          const Text(
+            'Virtual SIM',
+            style: TextStyle(
+                color: cTextPrim, fontSize: 17, fontWeight: FontWeight.w700,
+                letterSpacing: 0.5),
+          ),
+          const Spacer(),
+          _NavBtn(icon: Icons.show_chart_rounded, onTap: onTraffic),
+          _NavBtn(icon: Icons.storage_rounded, onTap: onCache),
+          _NavBtn(icon: Icons.tune_rounded, onTap: onSettings),
+        ],
       ),
     );
   }
 }
 
-// ── Idle Content ─────────────────────────────────────────────────────────────
-class _IdleContent extends StatelessWidget {
+class _NavBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _NavBtn({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, color: cTextSec, size: 22),
+        ),
+      );
+}
+
+// ── Agent Panel ───────────────────────────────────────────────────────────────
+class _AgentPanel extends StatelessWidget {
+  final VpnState state;
+  const _AgentPanel({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      glowColor: cViolet,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          state.agentThinking
+              ? SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(
+                      color: cViolet, strokeWidth: 1.5))
+              : const Icon(Icons.psychology_rounded, color: cViolet, size: 16),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              state.agentMessage.isEmpty ? 'Virtual SIM Agent' : state.agentMessage,
+              style: const TextStyle(color: cTextPrim, fontSize: 12.5),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (!state.agentHasKey) ...[
+            const SizedBox(width: 8),
+            _Badge('API Key', cAmber),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Badge(this.label, this.color);
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withAlpha(25),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withAlpha(80)),
+        ),
+        child: Text(label,
+            style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600)),
+      );
+}
+
+// ── Idle Card ─────────────────────────────────────────────────────────────────
+class _IdleCard extends StatelessWidget {
   final int quotaMb;
   final ValueChanged<int> onQuotaChanged;
-  final VoidCallback onAbsorb;
-  final VoidCallback onServe;
+  final VoidCallback onAbsorb, onServe;
   final AppLocalizations l;
 
-  const _IdleContent({
+  const _IdleCard({
     super.key,
     required this.quotaMb,
     required this.onQuotaChanged,
@@ -267,314 +283,279 @@ class _IdleContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Step flow
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _StepDot(icon: Icons.wifi_rounded, label: l.step1, color: electric),
-            const Icon(Icons.chevron_right_rounded, color: textSec, size: 16),
-            _StepDot(icon: Icons.download_rounded, label: l.step2, color: mint),
-            const Icon(Icons.chevron_right_rounded, color: textSec, size: 16),
-            _StepDot(icon: Icons.flight_rounded, label: l.step3, color: amber),
-            const Icon(Icons.chevron_right_rounded, color: textSec, size: 16),
-            _StepDot(icon: Icons.language_rounded, label: l.step4, color: cyanSim),
-          ],
-        ),
-        const SizedBox(height: 20),
-
-        // Quota selector
-        Row(
-          children: [
-            Text(l.quota, style: const TextStyle(color: textSec, fontSize: 13)),
-            const Spacer(),
-            Text('${quotaMb} MB',
-                style: const TextStyle(color: mint, fontSize: 15, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            activeTrackColor: mint,
-            inactiveTrackColor: bgSurface,
-            thumbColor: mint,
-            overlayColor: mint.withAlpha(30),
-          ),
-          child: Slider(
-            value: quotaMb.toDouble(),
-            min: 100,
-            max: 2048,
-            divisions: 19,
-            onChanged: (v) => onQuotaChanged(v.toInt()),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Absorb button
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: mint,
-              foregroundColor: bgDeep,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            onPressed: onAbsorb,
-            icon: const Icon(Icons.download_rounded),
-            label: Text(l.startAbsorbing,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        // Virtual SIM button
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: cyanSim,
-              side: const BorderSide(color: cyanSim),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            onPressed: onServe,
-            icon: const Icon(Icons.sim_card_rounded),
-            label: Text(l.startVirtualSim,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StepDot extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-
-  const _StepDot({required this.icon, required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 36, height: 36,
-          decoration: BoxDecoration(
-            color: color.withAlpha(25),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: color.withAlpha(80)),
-          ),
-          child: Icon(icon, color: color, size: 18),
-        ),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: textSec, fontSize: 9)),
-      ],
-    );
-  }
-}
-
-// ── Absorbing Content ─────────────────────────────────────────────────────────
-class _AbsorbingContent extends StatelessWidget {
-  final VpnState state;
-  final VoidCallback onStop;
-  final AppLocalizations l;
-
-  const _AbsorbingContent({super.key, required this.state, required this.onStop, required this.l});
-
-  @override
-  Widget build(BuildContext context) {
-    final pct = state.quotaMb > 0 ? (state.progressMb / state.quotaMb).clamp(0.0, 1.0) : 0.0;
-    final pctInt = (pct * 100).toInt();
-
-    return Column(
-      children: [
-        ArcProgress(
-          progress: pct,
-          size: 180,
-          color: mint,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    return GlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Step flow
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('$pctInt%',
-                  style: const TextStyle(color: mint, fontSize: 32, fontWeight: FontWeight.bold)),
-              Text(l.absorbing, style: const TextStyle(color: textSec, fontSize: 12)),
+              _Step(Icons.wifi_rounded, l.step1, cElectric),
+              _Arrow(),
+              _Step(Icons.download_rounded, l.step2, cMint),
+              _Arrow(),
+              _Step(Icons.flight_rounded, l.step3, cAmber),
+              _Arrow(),
+              _Step(Icons.language_rounded, l.step4, cCyan),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _StatChip(
-              icon: Icons.download_rounded,
-              value: _fmtMb(state.progressMb),
-              label: l.absorbed,
-              color: mint,
-            ),
-            _StatChip(
-              icon: Icons.link_rounded,
-              value: '${state.sessionRequests}',
-              label: l.urls,
-              color: electric,
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: redStop,
-              side: const BorderSide(color: redStop),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            onPressed: onStop,
-            icon: const Icon(Icons.stop_rounded),
-            label: Text(l.stop, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+
+          // Quota row
+          Row(
+            children: [
+              Text(l.quota,
+                  style: const TextStyle(color: cTextMid, fontSize: 13)),
+              const Spacer(),
+              GlowText('$quotaMb MB', color: cMint, size: 15, weight: FontWeight.w700),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          _QuotaSlider(value: quotaMb, onChanged: onQuotaChanged),
+          const SizedBox(height: 18),
+
+          NeonButton(
+            label: l.startAbsorbing,
+            icon: Icons.download_rounded,
+            color: cMint,
+            onTap: onAbsorb,
+          ),
+          const SizedBox(height: 10),
+          NeonButton(
+            label: l.startVirtualSim,
+            icon: Icons.sim_card_rounded,
+            color: cCyan,
+            onTap: onServe,
+            outlined: true,
+          ),
+        ],
+      ),
     );
   }
 }
 
-// ── Sim Active Content ────────────────────────────────────────────────────────
-class _SimActiveContent extends StatelessWidget {
+class _Step extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _Step(this.icon, this.label, this.color);
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: color.withAlpha(20),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withAlpha(60)),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(height: 4),
+          Text(label,
+              style: const TextStyle(color: cTextSec, fontSize: 9),
+              textAlign: TextAlign.center),
+        ],
+      );
+}
+
+class _Arrow extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) =>
+      const Icon(Icons.chevron_right_rounded, color: cBorder, size: 16);
+}
+
+class _QuotaSlider extends StatelessWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+  const _QuotaSlider({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SliderTheme(
+      data: SliderThemeData(
+        trackHeight: 3,
+        activeTrackColor: cMint,
+        inactiveTrackColor: cBorder,
+        thumbColor: cMint,
+        overlayColor: cMint.withAlpha(30),
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+      ),
+      child: Slider(
+        value: value.toDouble(),
+        min: 100, max: 2048, divisions: 19,
+        onChanged: (v) => onChanged(v.toInt()),
+      ),
+    );
+  }
+}
+
+// ── Absorbing Card ────────────────────────────────────────────────────────────
+class _AbsorbCard extends StatelessWidget {
   final VpnState state;
   final VoidCallback onStop;
   final AppLocalizations l;
-
-  const _SimActiveContent({super.key, required this.state, required this.onStop, required this.l});
+  const _AbsorbCard({super.key, required this.state, required this.onStop, required this.l});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 80, height: 80,
-          decoration: BoxDecoration(
-            color: cyanSim.withAlpha(25),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: cyanSim.withAlpha(80)),
-            boxShadow: [BoxShadow(color: cyanSim.withAlpha(50), blurRadius: 20, spreadRadius: 4)],
+    final pct = state.quotaMb > 0
+        ? (state.progressMb / state.quotaMb).clamp(0.0, 1.0)
+        : 0.0;
+
+    return GlassPanel(
+      glowColor: cMint,
+      child: Column(
+        children: [
+          ArcProgress(
+            progress: pct,
+            size: 180,
+            color: cMint,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GlowText('${(pct * 100).toInt()}%', color: cMint, size: 34),
+                const SizedBox(height: 2),
+                Text(l.absorbing,
+                    style: const TextStyle(color: cTextSec, fontSize: 11)),
+              ],
+            ),
           ),
-          child: const Icon(Icons.sim_card_rounded, color: cyanSim, size: 40),
-        ),
-        const SizedBox(height: 12),
-        Text(l.simActive,
-            style: const TextStyle(color: cyanSim, fontSize: 20, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text('${_fmtMb(state.cacheSizeMb)} · ${state.cacheEntryCount} pages',
-            style: const TextStyle(color: textSec, fontSize: 13)),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _StatChip(
-              icon: Icons.storage_rounded,
-              value: _fmtMb(state.cacheSizeMb),
-              label: l.cached,
-              color: cyanSim,
-            ),
-            _StatChip(
-              icon: Icons.offline_bolt_rounded,
-              value: '${state.cacheHits}',
-              label: l.cacheHits,
-              color: mint,
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: redStop,
-              side: const BorderSide(color: redStop),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            onPressed: onStop,
-            icon: const Icon(Icons.stop_rounded),
-            label: Text(l.stop, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _Stat(_fmt(state.progressMb), l.absorbed, cMint, Icons.download_rounded),
+              _Divider(),
+              _Stat('${state.sessionRequests}', l.urls, cElectric, Icons.link_rounded),
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 18),
+          NeonButton(
+            label: l.stop, icon: Icons.stop_rounded,
+            color: cRed, onTap: onStop, outlined: true,
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _StatChip extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-  final Color color;
-
-  const _StatChip({required this.icon, required this.value, required this.label, required this.color});
+// ── Serve Card ────────────────────────────────────────────────────────────────
+class _ServeCard extends StatelessWidget {
+  final VpnState state;
+  final VoidCallback onStop;
+  final AppLocalizations l;
+  const _ServeCard({super.key, required this.state, required this.onStop, required this.l});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 4),
-        Text(value,
-            style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: textSec, fontSize: 11)),
-      ],
+    return GlassPanel(
+      glowColor: cCyan,
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 76, height: 76,
+            decoration: BoxDecoration(
+              color: cCyan.withAlpha(20),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cCyan.withAlpha(80), width: 1.5),
+              boxShadow: [BoxShadow(color: cCyan.withAlpha(50), blurRadius: 24)],
+            ),
+            child: const Icon(Icons.sim_card_rounded, color: cCyan, size: 38),
+          ),
+          const SizedBox(height: 12),
+          GlowText(l.simActive, color: cCyan, size: 20),
+          const SizedBox(height: 4),
+          Text(
+            '${_fmt(state.cacheSizeMb)} · ${state.cacheEntryCount} pages',
+            style: const TextStyle(color: cTextSec, fontSize: 12),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _Stat(_fmt(state.cacheSizeMb), l.cached, cCyan, Icons.storage_rounded),
+              _Divider(),
+              _Stat('${state.cacheHits}', l.cacheHits, cMint, Icons.offline_bolt_rounded),
+            ],
+          ),
+          const SizedBox(height: 18),
+          NeonButton(
+            label: l.stop, icon: Icons.stop_rounded,
+            color: cRed, onTap: onStop, outlined: true,
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
+}
+
+class _Stat extends StatelessWidget {
+  final String value, label;
+  final Color color;
+  final IconData icon;
+  const _Stat(this.value, this.label, this.color, this.icon);
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 4),
+          GlowText(value, color: color, size: 18, weight: FontWeight.w700),
+          Text(label, style: const TextStyle(color: cTextSec, fontSize: 10)),
+        ],
+      );
+}
+
+class _Divider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) =>
+      Container(width: 1, height: 40, color: cBorder);
 }
 
 // ── Domain Feed ───────────────────────────────────────────────────────────────
 class _DomainFeed extends StatelessWidget {
   final List<MapEntry<String, int>> domains;
-  final AppLocalizations l;
-
-  const _DomainFeed({required this.domains, required this.l});
+  const _DomainFeed({required this.domains});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
+    return GlassPanel(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: bgCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF1A2A40)),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(l.domainFeed,
-              style: const TextStyle(color: textSec, fontSize: 11, letterSpacing: 1.2)),
-          const SizedBox(height: 8),
-          ...domains.take(6).map((e) => Padding(
+          Row(children: [
+            PulsingDot(color: cMint, size: 7),
+            const SizedBox(width: 8),
+            const Text('LIVE FEED',
+                style: TextStyle(color: cTextSec, fontSize: 10, letterSpacing: 1.8,
+                    fontWeight: FontWeight.w700)),
+          ]),
+          const SizedBox(height: 10),
+          ...domains.take(5).map((e) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 6, height: 6,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration:
-                          const BoxDecoration(color: mint, shape: BoxShape.circle),
+                child: Row(children: [
+                  Container(
+                    width: 5, height: 5, margin: const EdgeInsets.only(right: 8),
+                    decoration: const BoxDecoration(color: cMint, shape: BoxShape.circle),
+                  ),
+                  Expanded(
+                    child: Text(
+                      Uri.tryParse(e.key)?.host ?? e.key,
+                      style: const TextStyle(color: cTextPrim, fontSize: 11.5),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    Expanded(
-                      child: Text(
-                        Uri.tryParse(e.key)?.host ?? e.key,
-                        style: const TextStyle(color: textPrim, fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Text('${e.value}',
-                        style: const TextStyle(color: textSec, fontSize: 11)),
-                  ],
-                ),
+                  ),
+                  Text('${e.value}',
+                      style: const TextStyle(color: cTextSec, fontSize: 10)),
+                ]),
               )),
         ],
       ),
@@ -582,75 +563,48 @@ class _DomainFeed extends StatelessWidget {
   }
 }
 
-// ── Stats Row ─────────────────────────────────────────────────────────────────
-class _StatsRow extends StatelessWidget {
+// ── Bottom Stats ──────────────────────────────────────────────────────────────
+class _BottomStats extends StatelessWidget {
   final VpnState state;
   final AppLocalizations l;
-
-  const _StatsRow({required this.state, required this.l});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatCard(
-            label: l.urls,
-            value: '${state.cacheEntryCount}',
-            icon: Icons.link_rounded,
-            color: electric,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatCard(
-            label: l.mb,
-            value: _fmtMb(state.cacheSizeMb),
-            icon: Icons.storage_rounded,
-            color: mint,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _StatCard({required this.label, required this.value, required this.icon, required this.color});
+  const _BottomStats({required this.state, required this.l});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: bgCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withAlpha(40)),
+    return Row(children: [
+      Expanded(
+        child: GlassPanel(
+          padding: const EdgeInsets.all(14),
+          child: Row(children: [
+            const Icon(Icons.link_rounded, color: cElectric, size: 18),
+            const SizedBox(width: 10),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              GlowText('${state.cacheEntryCount}', color: cElectric, size: 20),
+              Text(l.urls, style: const TextStyle(color: cTextSec, fontSize: 10)),
+            ]),
+          ]),
+        ),
       ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
-              Text(label, style: const TextStyle(color: textSec, fontSize: 11)),
-            ],
-          ),
-        ],
+      const SizedBox(width: 12),
+      Expanded(
+        child: GlassPanel(
+          padding: const EdgeInsets.all(14),
+          child: Row(children: [
+            const Icon(Icons.storage_rounded, color: cMint, size: 18),
+            const SizedBox(width: 10),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              GlowText(_fmt(state.cacheSizeMb), color: cMint, size: 20),
+              Text(l.mb, style: const TextStyle(color: cTextSec, fontSize: 10)),
+            ]),
+          ]),
+        ),
       ),
-    );
+    ]);
   }
 }
 
-String _fmtMb(double mb) {
-  if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)} GB';
-  if (mb >= 1) return '${mb.toStringAsFixed(0)} MB';
-  return '${(mb * 1024).toStringAsFixed(0)} KB';
+String _fmt(double mb) {
+  if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)}G';
+  if (mb >= 1)    return '${mb.toStringAsFixed(0)}M';
+  return '${(mb * 1024).toStringAsFixed(0)}K';
 }

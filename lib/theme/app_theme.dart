@@ -1,78 +1,53 @@
 import 'package:flutter/material.dart';
 
-const bgDeep    = Color(0xFF060914);
-const bgCard    = Color(0xFF0C1428);
-const bgSurface = Color(0xFF111D35);
-const electric  = Color(0xFF00B4FF);
-const mint      = Color(0xFF00F5A0);
-const violetAI  = Color(0xFF9B72FF);
-const cyanSim   = Color(0xFF00E5FF);
-const amber     = Color(0xFFFFB800);
-const redStop   = Color(0xFFFF3B30);
-const textPrim  = Color(0xFFE8F4FD);
-const textSec   = Color(0xFF7B9AB2);
+// ── Palette ──────────────────────────────────────────────────────────────────
+const Color cBg       = Color(0xFF04070F);   // near-black background
+const Color cSurface  = Color(0xFF0A1020);   // card surface
+const Color cBorder   = Color(0xFF1A2A45);   // subtle border
+const Color cElectric = Color(0xFF00C8FF);   // electric blue
+const Color cMint     = Color(0xFF00F5A0);   // mint green
+const Color cViolet   = Color(0xFF9B72FF);   // violet (AI)
+const Color cCyan     = Color(0xFF00E5FF);   // cyan (serve)
+const Color cAmber    = Color(0xFFFFB800);   // amber (warning)
+const Color cRed      = Color(0xFFFF3B30);   // red (stop/error)
+const Color cTextPrim = Color(0xFFE6F0FF);   // primary text
+const Color cTextSec  = Color(0xFF4A6480);   // secondary text
+const Color cTextMid  = Color(0xFF8AAABF);   // mid text
 
+// Pre-built gradients
+final bgGradient = const LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [Color(0xFF06091A), Color(0xFF040810), Color(0xFF020508)],
+  stops: [0, 0.5, 1],
+);
+
+LinearGradient glowGradient(Color c) => LinearGradient(
+  colors: [c.withAlpha(40), c.withAlpha(10)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
 final appTheme = ThemeData(
+  useMaterial3: false,
   brightness: Brightness.dark,
-  scaffoldBackgroundColor: bgDeep,
+  scaffoldBackgroundColor: cBg,
   colorScheme: const ColorScheme.dark(
-    surface: bgCard,
-    primary: electric,
-    secondary: mint,
-    tertiary: violetAI,
-    error: redStop,
-    onSurface: textPrim,
-    onPrimary: bgDeep,
+    surface: cSurface,
+    primary: cElectric,
+    secondary: cMint,
+    tertiary: cViolet,
+    error: cRed,
   ),
   textTheme: const TextTheme(
-    displayLarge: TextStyle(color: textPrim, fontWeight: FontWeight.bold),
-    headlineMedium: TextStyle(color: textPrim, fontWeight: FontWeight.bold),
-    titleLarge: TextStyle(color: textPrim, fontWeight: FontWeight.w600),
-    titleMedium: TextStyle(color: textPrim, fontWeight: FontWeight.w500),
-    bodyLarge: TextStyle(color: textPrim),
-    bodyMedium: TextStyle(color: textSec),
-    bodySmall: TextStyle(color: textSec),
-    labelSmall: TextStyle(color: textSec, letterSpacing: 1.2),
+    displayLarge : TextStyle(color: cTextPrim, fontWeight: FontWeight.w700, letterSpacing: -1),
+    headlineMedium: TextStyle(color: cTextPrim, fontWeight: FontWeight.w700),
+    titleLarge   : TextStyle(color: cTextPrim, fontWeight: FontWeight.w600),
+    titleMedium  : TextStyle(color: cTextPrim, fontWeight: FontWeight.w500),
+    bodyLarge    : TextStyle(color: cTextPrim),
+    bodyMedium   : TextStyle(color: cTextMid),
+    bodySmall    : TextStyle(color: cTextSec),
+    labelSmall   : TextStyle(color: cTextSec, letterSpacing: 1.4, fontWeight: FontWeight.w600),
   ),
-  cardTheme: CardThemeData(
-    color: bgCard,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    elevation: 0,
-  ),
-  inputDecorationTheme: InputDecorationTheme(
-    filled: true,
-    fillColor: const Color(0xFF0A0F20),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: Color(0xFF2A3A55)),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: Color(0xFF2A3A55)),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: violetAI, width: 2),
-    ),
-    hintStyle: const TextStyle(color: textSec),
-    labelStyle: const TextStyle(color: textSec),
-  ),
-  elevatedButtonTheme: ElevatedButtonThemeData(
-    style: ElevatedButton.styleFrom(
-      backgroundColor: electric,
-      foregroundColor: bgDeep,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-    ),
-  ),
-  outlinedButtonTheme: OutlinedButtonThemeData(
-    style: OutlinedButton.styleFrom(
-      foregroundColor: electric,
-      side: const BorderSide(color: electric),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-    ),
-  ),
-  iconTheme: const IconThemeData(color: textSec),
-  dividerColor: Color(0xFF1A2A40),
 );
