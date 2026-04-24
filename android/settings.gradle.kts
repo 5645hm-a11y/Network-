@@ -25,6 +25,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Flutter engine artifacts (flutter_embedding, arm64_v8a, etc.)
+        maven { url = uri("https://storage.googleapis.com/download.flutter.io") }
     }
 }
 
